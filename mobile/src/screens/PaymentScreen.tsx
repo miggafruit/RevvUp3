@@ -9,7 +9,7 @@ import { getOrderById, payOrder } from "../api/orderApi";
 import { Order } from "../types/marketplace";
 import PaystackCheckout from "../components/PaystackCheckout";
 
-const PAYSTACK_PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_test_224da5d5225a6d0cb4c95a2da7002ccf2fa3a7eb";
+const PAYSTACK_PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_live_22278ba900dd630d93cfffbb18b9ee73cebd2f1a";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Payment'>;
 

@@ -133,7 +133,9 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <Text style={styles.footerText}>YOUR CAR. YOUR JOURNEY. YOUR REVVUP.</Text>
             <View style={[styles.footerLine, { backgroundColor: c.green }]} />
           </View>
-          <Text style={styles.poweredByText}>Powered by IdeasAI</Text>
+          <Text style={styles.poweredByText}>
+            Powered by <Text style={{ fontWeight: 'bold', color: '#FFFFFF' }}>IdeasAI</Text>
+          </Text>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
