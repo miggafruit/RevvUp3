@@ -18,9 +18,30 @@ const { buildSearchRegex } = require('../utils/searchHelpers');
 // needs to see the images to review them.
 const getKycQueue = async (req, res, next) => {
   try {
+    // bankingDetails.accountNumber has select: false at the schema
+    // level (see User.js), so it has to be explicitly added back with
+    // a "+" to appear at all. The bug: the previous version also
+    // listed the parent field `bankingDetails` in the same inclusive
+    // projection, and MongoDB rejects specifying both a parent path
+    // and a child of that same path in one projection ("path
+    // collision") — which is exactly the 500 error this was causing
+    // on every request. The fix is to list each bankingDetails
+    // subfield individually instead of the parent object, so there's
+    // no overlapping path.
+    //
+    // Also deliberately excludes kycDocuments.image — the queue list
+    // only ever displays a document *count* (see admin's
+    // KycQueuePage, which uses kycDocuments.length and nothing else),
+    // never the actual images, and each image is a full base64 string
+    // that can be 1-2MB on its own. getKycDetail below (a single
+    // user, opened on demand) is the right place to load full images.
     const users = await User.find({ kycStatus: 'pending' })
-      .select('name email phone role businessName businessAddress category kycDocuments bankingDetails createdAt')
-      .select('+bankingDetails.accountNumber')
+      .select(
+        'name email phone role businessName businessAddress category kycDocuments createdAt ' +
+        'bankingDetails.accountHolder bankingDetails.bankName bankingDetails.branchCode bankingDetails.accountType ' +
+        '+bankingDetails.accountNumber'
+      )
+      .select('-kycDocuments.image')
       .sort({ createdAt: 1 }); // oldest first — first submitted, first reviewed
 
     res.status(200).json({ users });
@@ -35,9 +56,14 @@ const getKycQueue = async (req, res, next) => {
 // taps into a specific queue item.
 const getKycDetail = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.userId)
-      .select('name email phone role businessName businessAddress category kycDocuments bankingDetails kycStatus createdAt')
-      .select('+bankingDetails.accountNumber');
+    // Same fix as getKycQueue above — bankingDetails subfields listed
+    // individually rather than alongside the parent field, to avoid
+    // the same path-collision 500.
+    const user = await User.findById(req.params.userId).select(
+      'name email phone role businessName businessAddress category kycDocuments kycStatus createdAt ' +
+      'bankingDetails.accountHolder bankingDetails.bankName bankingDetails.branchCode bankingDetails.accountType ' +
+      '+bankingDetails.accountNumber'
+    );
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }

@@ -17,7 +17,16 @@ const KycQueuePage: React.FC = () => {
   useEffect(() => {
     getKycQueue()
       .then(setItems)
-      .catch(() => setError("Couldn't load the KYC queue. Try refreshing."));
+      .catch((err) => {
+        // Previously swallowed entirely — the error banner said the
+        // same generic thing regardless of whether this was a timeout,
+        // a CORS block, or a genuine backend error, so diagnosing it
+        // meant guessing. Logged to console (and to Sentry via the
+        // client's own 5xx/network handling) so the real cause is
+        // actually visible.
+        console.error('Failed to load KYC queue:', err);
+        setError("Couldn't load the KYC queue. Try refreshing.");
+      });
   }, []);
 
   return (
