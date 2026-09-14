@@ -8,8 +8,7 @@ import { useAuth } from "../context/AuthContext";
 import { getRequest, payRide, payCash } from "../api/ehailingApi";
 import { Ride } from "../types/ehailing";
 import PaystackCheckout from "../components/PaystackCheckout";
-
-const PAYSTACK_PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_live_22278ba900dd630d93cfffbb18b9ee73cebd2f1a";
+import { getPaystackPublicKey } from "../utils/paystackConfig";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RidePayment'>;
 
@@ -150,6 +149,19 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
   const lastName = nameParts.slice(1).join(" ") || "";
   const payerPhone = user?.phone || "";
 
+  let paystackPublicKey: string;
+  try {
+    paystackPublicKey = getPaystackPublicKey();
+  } catch (error: any) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24 }}>
+          {error.message}
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   const html = `
   <html>
     <body>
@@ -157,7 +169,7 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
       <script>
         function pay(){
           var handler = PaystackPop.setup({
-            key: '${PAYSTACK_PUBLIC_KEY}',
+            key: '${paystackPublicKey}',
             email: '${escapeForJs(payerEmail)}',
             firstname: '${escapeForJs(firstName)}',
             lastname: '${escapeForJs(lastName)}',

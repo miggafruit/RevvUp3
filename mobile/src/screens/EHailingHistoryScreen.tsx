@@ -15,7 +15,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types/navigation";
 import { useAuth } from "../context/AuthContext";
-import { getHistory } from "../api/ehailingApi";
+import { getHistory, confirmCashReceived } from "../api/ehailingApi";
 import { LIVE_RIDE_STATUSES } from "../constants/roadsideServices";
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -51,7 +51,11 @@ type HistoryItem = {
   vehicleDetails?: { make: string; model: string; licensePlate: string };
   fare?: number;
   createdAt: string;
-  driver?: { driver_name: string };
+  driver?: { driver_id?: string; driver_name: string };
+  paymentMethod?: 'paystack' | 'cash';
+  paymentStatus?: 'pending' | 'paid' | 'failed';
+  driverCashConfirmed?: boolean;
+  cashDisputedByDriver?: boolean;
 };
 
 export default function EHailingHistoryScreen() {
@@ -61,6 +65,7 @@ export default function EHailingHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -97,6 +102,29 @@ export default function EHailingHistoryScreen() {
         "Active job",
         "Open \"View Job Requests\" from your dashboard to see your current active job — resuming it directly from history isn't available yet."
       );
+    }
+  };
+
+  const handleCashConfirm = async (item: HistoryItem, received: boolean) => {
+    setConfirmingId(item.id);
+    try {
+      const res = await confirmCashReceived(item.id, received);
+      const updated = res?.data;
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id
+            ? {
+                ...it,
+                driverCashConfirmed: updated?.driverCashConfirmed ?? received,
+                cashDisputedByDriver: updated?.cashDisputedByDriver ?? !received,
+              }
+            : it
+        )
+      );
+    } catch {
+      showAlert('Error', "Couldn't update this — please try again.");
+    } finally {
+      setConfirmingId(null);
     }
   };
 
@@ -157,6 +185,51 @@ export default function EHailingHistoryScreen() {
             <Text style={styles.infoText}>R{item.fare}</Text>
           </View>
         ) : null}
+
+        {item.paymentMethod === 'cash' &&
+          item.status === 'completed' &&
+          user?.role !== 'client' &&
+          item.driver?.driver_id === user?.id && (
+            <View style={styles.cashConfirmBox}>
+              {item.driverCashConfirmed ? (
+                <View style={styles.cashRow}>
+                  <MaterialCommunityIcons name="check-circle" size={15} color="#22c55e" />
+                  <Text style={[styles.cashConfirmText, { color: '#22c55e' }]}>Cash receipt confirmed</Text>
+                </View>
+              ) : item.cashDisputedByDriver ? (
+                <View style={styles.cashRow}>
+                  <MaterialCommunityIcons name="alert-circle" size={15} color="#EF4444" />
+                  <Text style={[styles.cashConfirmText, { color: '#EF4444' }]}>You flagged this as not received</Text>
+                </View>
+              ) : (
+                <>
+                  <Text style={styles.cashConfirmText}>
+                    Client says they paid you R{item.fare} in cash — did you receive it?
+                  </Text>
+                  <View style={styles.cashButtonsRow}>
+                    <TouchableOpacity
+                      style={styles.cashYesBtn}
+                      disabled={confirmingId === item.id}
+                      onPress={() => handleCashConfirm(item, true)}
+                    >
+                      {confirmingId === item.id ? (
+                        <ActivityIndicator size="small" color="white" />
+                      ) : (
+                        <Text style={styles.cashBtnText}>Yes, received</Text>
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.cashNoBtn}
+                      disabled={confirmingId === item.id}
+                      onPress={() => handleCashConfirm(item, false)}
+                    >
+                      <Text style={[styles.cashBtnText, { color: '#EF4444' }]}>Didn't receive it</Text>
+                    </TouchableOpacity>
+                  </View>
+                </>
+              )}
+            </View>
+          )}
 
         {isLive && (
           <View style={styles.liveRow}>
@@ -247,4 +320,32 @@ const styles = StyleSheet.create({
   infoText: { color: "#9CA3AF", fontSize: 13, flex: 1 },
   liveRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 },
   liveText: { color: "#F97316", fontSize: 12, fontWeight: "600" },
+  cashConfirmBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#0A1628",
+    borderWidth: 1,
+    borderColor: "#1E3A5F",
+  },
+  cashRow: { flexDirection: "row", alignItems: "center", gap: 6 },
+  cashConfirmText: { color: "#D1D5DB", fontSize: 12.5, lineHeight: 17 },
+  cashButtonsRow: { flexDirection: "row", gap: 8, marginTop: 10 },
+  cashYesBtn: {
+    flex: 1,
+    backgroundColor: "#22c55e",
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  cashNoBtn: {
+    flex: 1,
+    backgroundColor: "transparent",
+    borderWidth: 1,
+    borderColor: "#EF4444",
+    borderRadius: 8,
+    paddingVertical: 9,
+    alignItems: "center",
+  },
+  cashBtnText: { color: "white", fontSize: 12.5, fontWeight: "700" },
 });

@@ -1,4 +1,5 @@
 const Service = require('../models/Service');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 
 // @route   POST /api/services
@@ -92,12 +93,28 @@ const getServices = async (req, res, next) => {
     if (category && category !== 'All') {
       query.category = category;
     }
+
+    // Same fix as productController.getProducts — only surface services
+    // from providers who've actually passed KYC, instead of every
+    // service_provider account being publicly bookable immediately.
+    const verifiedProviderIds = await User.find({ role: 'service_provider', kycStatus: 'approved' }).distinct('_id');
+
     if (provider) {
       if (!mongoose.Types.ObjectId.isValid(provider)) {
         return res.status(400).json({ message: 'Invalid provider id' });
       }
+      const isVerifiedProvider = verifiedProviderIds.some((id) => id.toString() === provider);
+      if (!isVerifiedProvider) {
+        return res.status(200).json({
+          services: [],
+          pagination: { page: 1, limit: Number(limit) || 20, total: 0, pages: 0 }
+        });
+      }
       query.provider = provider;
+    } else {
+      query.provider = { $in: verifiedProviderIds };
     }
+
     if (search) {
       query.$text = { $search: search };
     }
@@ -130,10 +147,10 @@ const getServiceById = async (req, res, next) => {
   try {
     const service = await Service.findById(req.params.id).populate(
       'provider',
-      'businessName businessAddress phone'
+      'businessName businessAddress phone kycStatus'
     );
 
-    if (!service || !service.isActive) {
+    if (!service || !service.isActive || service.provider?.kycStatus !== 'approved') {
       return res.status(404).json({ message: 'Service not found' });
     }
 

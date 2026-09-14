@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Image, TextInput, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, Image, TextInput, StyleSheet, ActionSheetIOS, Platform, Alert } from 'react-native';
 import { showAlert } from '../utils/crossPlatformAlert';
 import * as ImagePicker from 'expo-image-picker';
 import { KycDocument } from '../types/auth';
@@ -9,6 +9,12 @@ interface Props {
   role: 'shop' | 'service_provider';
   documents: KycDocument[];
   onChange: (docs: KycDocument[]) => void;
+  /** Adds a suggested "Vehicle Registration / Roadworthy" slot — shown
+   * when this account is opting into delivery or roadside/towing work,
+   * where a vehicle document actually matters. Previously this document
+   * type existed in the schema but was never actually offered as a
+   * slot anywhere, so nobody was ever prompted to upload it. */
+  showVehicleDocument?: boolean;
 }
 
 const SHOP_SLOTS: Array<{ type: KycDocument['type']; label: string; hint: string }> = [
@@ -24,7 +30,20 @@ const SERVICE_PROVIDER_SLOTS: Array<{ type: KycDocument['type']; label: string; 
   { type: 'selfie', label: 'Selfie', hint: 'A clear photo of your face, for identity verification' }
 ];
 
-const pickImage = async (): Promise<string | null> => {
+const VEHICLE_DOCUMENT_SLOT: { type: KycDocument['type']; label: string; hint: string } = {
+  type: 'vehicle_registration',
+  label: 'Vehicle Registration / Roadworthy',
+  hint: "Required before you'll actually be dispatched any delivery or roadside/towing jobs — clients need to know your vehicle checks out."
+};
+
+const imageFromResult = (result: ImagePicker.ImagePickerResult): string | null => {
+  if (result.canceled || !result.assets?.[0]?.base64) return null;
+  const asset = result.assets[0];
+  const mime = asset.mimeType || 'image/jpeg';
+  return `data:${mime};base64,${asset.base64}`;
+};
+
+const pickFromGallery = async (): Promise<string | null> => {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (!permission.granted) {
     showAlert('Permission Needed', 'Please allow photo library access to upload a document.');
@@ -37,22 +56,76 @@ const pickImage = async (): Promise<string | null> => {
     base64: true
   });
 
-  if (result.canceled || !result.assets?.[0]?.base64) return null;
-
-  const asset = result.assets[0];
-  const mime = asset.mimeType || 'image/jpeg';
-  return `data:${mime};base64,${asset.base64}`;
+  return imageFromResult(result);
 };
 
-const KycUploader: React.FC<Props> = ({ role, documents, onChange }) => {
+const pickFromCamera = async (): Promise<string | null> => {
+  const permission = await ImagePicker.requestCameraPermissionsAsync();
+  if (!permission.granted) {
+    showAlert('Permission Needed', 'Please allow camera access to take a photo.');
+    return null;
+  }
+
+  const result = await ImagePicker.launchCameraAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    quality: 0.5,
+    base64: true,
+    cameraType: ImagePicker.CameraType.front
+  });
+
+  return imageFromResult(result);
+};
+
+/**
+ * Lets the user choose camera vs gallery instead of only ever opening the
+ * gallery. This matters most for the selfie slot — a gallery-only picker
+ * meant there was no way to actually take a live selfie, only to attach an
+ * existing photo.
+ */
+const pickImage = async (preferCamera: boolean): Promise<string | null> => {
+  return new Promise((resolve) => {
+    const options = preferCamera ? ['Take Photo', 'Choose from Gallery', 'Cancel'] : ['Choose from Gallery', 'Take Photo', 'Cancel'];
+    const cancelButtonIndex = 2;
+
+    const runChoice = async (choiceIsCamera: boolean) => {
+      const image = choiceIsCamera ? await pickFromCamera() : await pickFromGallery();
+      resolve(image);
+    };
+
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions({ options, cancelButtonIndex }, (index) => {
+        if (index === cancelButtonIndex) return resolve(null);
+        const chosenLabel = options[index];
+        runChoice(chosenLabel === 'Take Photo');
+      });
+    } else {
+      Alert.alert('Add Photo', undefined, [
+        { text: options[0], onPress: () => runChoice(options[0] === 'Take Photo') },
+        { text: options[1], onPress: () => runChoice(options[1] === 'Take Photo') },
+        { text: 'Cancel', style: 'cancel', onPress: () => resolve(null) }
+      ]);
+    }
+  });
+};
+
+const KycUploader: React.FC<Props> = ({ role, documents, onChange, showVehicleDocument }) => {
   const [customLabel, setCustomLabel] = useState('');
 
-  const suggestedSlots = role === 'shop' ? SHOP_SLOTS : SERVICE_PROVIDER_SLOTS;
+  const suggestedSlots =
+    role === 'shop'
+      ? SHOP_SLOTS
+      : showVehicleDocument
+        ? [...SERVICE_PROVIDER_SLOTS, VEHICLE_DOCUMENT_SLOT]
+        : SERVICE_PROVIDER_SLOTS;
 
   const findDoc = (type: KycDocument['type']) => documents.find((d) => d.type === type);
 
   const handlePickForSlot = async (type: KycDocument['type'], label: string) => {
-    const image = await pickImage();
+    // Selfies default to opening the camera first (front-facing) since a
+    // selfie is meant to be taken live, not selected from an old photo —
+    // everything else defaults to the gallery. Either slot can still pick
+    // the other option from the sheet.
+    const image = await pickImage(type === 'selfie');
     if (!image) return;
 
     const existing = findDoc(type);
@@ -68,7 +141,7 @@ const KycUploader: React.FC<Props> = ({ role, documents, onChange }) => {
   };
 
   const handleAddOther = async () => {
-    const image = await pickImage();
+    const image = await pickImage(false);
     if (!image) return;
     const label = customLabel.trim() || 'Additional Document';
     onChange([...documents, { id: `other-${Date.now()}`, type: 'other', label, image }]);

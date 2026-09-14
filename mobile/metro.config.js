@@ -1,6 +1,13 @@
-const { getDefaultConfig } = require('expo/metro-config');
+const { getSentryExpoConfig } = require('@sentry/react-native/metro');
 
-const config = getDefaultConfig(__dirname);
+// getSentryExpoConfig wraps expo/metro-config's getDefaultConfig and
+// additionally annotates the build with debug IDs so stack traces
+// reported to Sentry can be symbolicated back to real source lines
+// instead of minified bundle positions. Safe to use even without a
+// DSN configured — it only affects build output, not runtime
+// behavior, so this doesn't couple Sentry being "on" to the app
+// building at all.
+const config = getSentryExpoConfig(__dirname);
 
 const originalResolveRequest = config.resolver.resolveRequest;
 

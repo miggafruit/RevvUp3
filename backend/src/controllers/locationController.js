@@ -1,4 +1,4 @@
-const axios = require('axios');
+const httpClient = require('../utils/httpClient');
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
 const PLACES_AUTOCOMPLETE_URL = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
@@ -29,7 +29,7 @@ const searchPlaces = async (req, res, next) => {
       params.radius = 50000;
     }
 
-    const { data } = await axios.get(PLACES_AUTOCOMPLETE_URL, { params });
+    const { data } = await httpClient.get(PLACES_AUTOCOMPLETE_URL, { params });
 
     // TEMPORARY diagnostic — remove once this is sorted out. Prints
     // Google's actual response status directly to the backend
@@ -66,7 +66,7 @@ const getPlaceDetails = async (req, res, next) => {
     }
 
     const { placeId } = req.params;
-    const { data } = await axios.get(PLACE_DETAILS_URL, {
+    const { data } = await httpClient.get(PLACE_DETAILS_URL, {
       params: { place_id: placeId, fields: 'formatted_address,geometry', key: GOOGLE_MAPS_API_KEY }
     });
 
@@ -106,7 +106,7 @@ const reverseGeocode = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'latitude and longitude are required.' });
     }
 
-    const { data } = await axios.get(GEOCODE_URL, {
+    const { data } = await httpClient.get(GEOCODE_URL, {
       params: { latlng: `${latitude},${longitude}`, key: GOOGLE_MAPS_API_KEY }
     });
 
@@ -137,7 +137,7 @@ const getDirections = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'origin and destination coordinates are required.' });
     }
 
-    const { data } = await axios.get(DIRECTIONS_URL, {
+    const { data } = await httpClient.get(DIRECTIONS_URL, {
       params: {
         origin: `${originLat},${originLng}`,
         destination: `${destLat},${destLng}`,
@@ -183,7 +183,7 @@ const geocodeAddress = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'An address is required.' });
     }
 
-    const { data } = await axios.get(GEOCODE_URL, {
+    const { data } = await httpClient.get(GEOCODE_URL, {
       params: { address, key: GOOGLE_MAPS_API_KEY }
     });
 

@@ -1,11 +1,29 @@
 const { Resend } = require('resend');
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Previously `new Resend(process.env.RESEND_API_KEY)` ran at module
+// load time, and Resend's constructor throws synchronously if the key
+// is missing/empty — meaning the ENTIRE SERVER failed to boot the
+// moment this file was required (sendEmail.js is required by
+// authController.js, which is required by every route file), not just
+// password-reset emails. Lazy construction means the app starts fine
+// without the key (as validateEnv.js's "recommended, not required"
+// classification always intended), and only the actual attempt to
+// send an email fails — with a clear error, not a boot crash.
+let resendClient = null;
+const getResendClient = () => {
+  if (!process.env.RESEND_API_KEY) {
+    throw new Error('RESEND_API_KEY is not set — cannot send email.');
+  }
+  if (!resendClient) {
+    resendClient = new Resend(process.env.RESEND_API_KEY);
+  }
+  return resendClient;
+};
 
 const sendPasswordResetEmail = async ({ to, resetToken, resetUrl }) => {
   const from = process.env.EMAIL_FROM || 'RevvUp <onboarding@resend.dev>';
 
-  await resend.emails.send({
+  await getResendClient().emails.send({
     from,
     to,
     subject: 'Reset your RevvUp password',

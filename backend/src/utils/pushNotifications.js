@@ -1,4 +1,5 @@
 const { Expo } = require('expo-server-sdk');
+const { reportSilentFailure } = require('./reportSilentFailure');
 
 const expo = new Expo();
 
@@ -35,11 +36,19 @@ const sendPushNotifications = async (recipients, { title, body, data }) => {
         await expo.sendPushNotificationsAsync(chunk);
       } catch (err) {
         console.warn('[push] Failed to send a chunk of notifications:', err.message);
+        // One-off failures here are normal (a stale token, a brief
+        // Expo API hiccup) — reported anyway so a systemic issue
+        // (e.g. Expo access token misconfigured, mass token
+        // invalidation) shows up as a cluster of events instead of
+        // being invisible until "nobody's getting notifications" turns
+        // into a support ticket.
+        reportSilentFailure(err, 'push-notifications', { notificationType: data?.type, chunkSize: chunk.length });
       }
     }
   } catch (err) {
     // Never let a notification failure break the caller's actual flow.
     console.warn('[push] sendPushNotifications failed:', err.message);
+    reportSilentFailure(err, 'push-notifications', { notificationType: data?.type });
   }
 };
 

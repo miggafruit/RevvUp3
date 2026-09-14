@@ -19,7 +19,8 @@ const { buildSearchRegex } = require('../utils/searchHelpers');
 const getKycQueue = async (req, res, next) => {
   try {
     const users = await User.find({ kycStatus: 'pending' })
-      .select('name email phone role businessName businessAddress category kycDocuments createdAt')
+      .select('name email phone role businessName businessAddress category kycDocuments bankingDetails createdAt')
+      .select('+bankingDetails.accountNumber')
       .sort({ createdAt: 1 }); // oldest first — first submitted, first reviewed
 
     res.status(200).json({ users });
@@ -34,9 +35,9 @@ const getKycQueue = async (req, res, next) => {
 // taps into a specific queue item.
 const getKycDetail = async (req, res, next) => {
   try {
-    const user = await User.findById(req.params.userId).select(
-      'name email phone role businessName businessAddress category kycDocuments kycStatus createdAt'
-    );
+    const user = await User.findById(req.params.userId)
+      .select('name email phone role businessName businessAddress category kycDocuments bankingDetails kycStatus createdAt')
+      .select('+bankingDetails.accountNumber');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
@@ -56,12 +57,26 @@ const reviewKyc = async (req, res, next) => {
       return res.status(400).json({ message: "status must be 'approved' or 'rejected'" });
     }
 
-    const user = await User.findById(req.params.userId);
+    const user = await User.findById(req.params.userId).select('+bankingDetails.accountNumber');
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
     if (user.kycStatus !== 'pending') {
       return res.status(400).json({ message: `This account's KYC is already "${user.kycStatus}", not pending.` });
+    }
+
+    // Approval is also the payout-eligibility gate — an account can't
+    // actually be paid without banking details on file (see
+    // PayoutEntry.js), so it shouldn't be approvable without them
+    // either. Testers flagged this as entirely missing before; this is
+    // what actually enforces it rather than just asking nicely at signup.
+    if (status === 'approved') {
+      const bd = user.bankingDetails;
+      if (!bd?.accountHolder || !bd?.bankName || !bd?.accountNumber || !bd?.branchCode) {
+        return res.status(400).json({
+          message: 'This account is missing banking details — ask them to add banking details before approving.'
+        });
+      }
     }
 
     user.kycStatus = status;
@@ -387,6 +402,19 @@ const getRevenue = async (req, res, next) => {
       .map(([date, total]) => ({ date, total }))
       .sort((a, b) => a.date.localeCompare(b.date));
 
+    // "Revenue" above is gross transaction volume — the full amount
+    // that changed hands, including ride fares and order totals that
+    // are almost entirely owed straight back out to drivers/sellers
+    // (see PayoutEntry). It significantly overstates what the platform
+    // actually keeps. platformEarnings is the real number: commission
+    // withheld from ride/order payouts (config/commission.js — 0 until
+    // a real rate is set) plus promotion payments, which are the one
+    // revenue stream that's already 100% the platform's own money.
+    const [commissionTotal] = await PayoutEntry.aggregate([
+      { $group: { _id: null, total: { $sum: { $ifNull: ['$platformCut', 0] } } } }
+    ]);
+    const platformEarnings = (commissionTotal?.total || 0) + promotionsTotal;
+
     res.status(200).json({
       total: ridesTotal + ordersTotal + promotionsTotal,
       today: ridesToday + ordersToday + promotionsToday,
@@ -397,6 +425,11 @@ const getRevenue = async (req, res, next) => {
         orders: ordersTotal,
         promotions: promotionsTotal
       },
+      // Real platform take-home, as distinct from the gross totals
+      // above. See comment above — this is what "total" should
+      // probably be renamed to once the frontend is updated to show
+      // both numbers clearly.
+      platformEarnings,
       dailySeries
     });
   } catch (error) {

@@ -1,5 +1,6 @@
-const axios = require('axios');
+const httpClient = require('./httpClient');
 const { haversineDistanceKm } = require('./geo');
+const { reportSilentFailure } = require('./reportSilentFailure');
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY || '';
 const DISTANCE_MATRIX_URL = 'https://maps.googleapis.com/maps/api/distancematrix/json';
@@ -28,12 +29,23 @@ const getDistanceAndDuration = async (origin, destination) => {
   });
 
   try {
-    const response = await axios.get(`${DISTANCE_MATRIX_URL}?${params.toString()}`);
+    const response = await httpClient.get(`${DISTANCE_MATRIX_URL}?${params.toString()}`);
     const data = response.data;
 
     const element = data?.rows?.[0]?.elements?.[0];
     if (data.status !== 'OK' || !element || element.status !== 'OK') {
+      // A key IS configured here (the no-key case returns early above
+      // without ever reaching this branch) — so this means the key
+      // itself, billing, or a quota is the problem, not "unconfigured
+      // by design." That's worth knowing about even though the
+      // fallback keeps things working, since every ride in the
+      // meantime is getting a rougher straight-line ETA estimate
+      // instead of a real routed one.
       console.warn('[distance] Distance Matrix returned no route, using fallback', {
+        status: data.status,
+        elementStatus: element?.status
+      });
+      reportSilentFailure(new Error(`Distance Matrix non-OK status: ${data.status}`), 'distance-matrix', {
         status: data.status,
         elementStatus: element?.status
       });
@@ -47,6 +59,7 @@ const getDistanceAndDuration = async (origin, destination) => {
     };
   } catch (err) {
     console.warn('[distance] Distance Matrix request failed, using fallback', err.message);
+    reportSilentFailure(err, 'distance-matrix');
     return fallback(origin, destination);
   }
 };

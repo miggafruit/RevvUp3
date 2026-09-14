@@ -126,6 +126,12 @@ const ServiceProviderDashboardScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.bigCardSubtitle}>Opt into delivery or roadside jobs, or update your vehicle</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('EditBusinessProfile')}>
+          <Text style={styles.bigCardEmoji}>🪪</Text>
+          <Text style={styles.bigCardTitle}>Edit Profile</Text>
+          <Text style={styles.bigCardSubtitle}>Add a photo, qualifications, and portfolio images</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('KycStatus')}>
           <Text style={styles.bigCardEmoji}>🛡️</Text>
           <Text style={styles.bigCardTitle}>Verification Status</Text>

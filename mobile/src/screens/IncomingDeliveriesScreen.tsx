@@ -11,10 +11,13 @@ import { showAlert } from '../utils/crossPlatformAlert';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import MapView, { Marker, PROVIDER_GOOGLE } from '../components/PlatformMap';
+import MapUnavailableNotice from '../components/MapUnavailableNotice';
+import { hasGoogleMapsKey } from '../utils/mapsConfig';
 import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
 import * as deliveryApi from '../api/deliveryApi';
+import { setAvailability } from '../api/ehailingApi';
 import { Delivery } from '../types/delivery';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'IncomingDeliveries'>;
@@ -55,8 +58,21 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
     }
   }, []);
 
+  // Same underlying gap as EHailingDriverScreen, same fix: go online
+  // server-side (isOnline defaults to false and nothing else ever set
+  // it, so findAvailableDeliveryDrivers could never match this driver
+  // for real-time dispatch), and poll on an interval instead of only
+  // ever fetching once on mount.
+  const DELIVERY_POLL_INTERVAL_MS = 15000;
+
   useEffect(() => {
+    setAvailability(true).catch(() => {});
     loadPending();
+    const pollId = setInterval(loadPending, DELIVERY_POLL_INTERVAL_MS);
+    return () => {
+      clearInterval(pollId);
+      setAvailability(false).catch(() => {});
+    };
   }, [loadPending]);
 
   // Resume an in-progress delivery — the endpoint and API wrapper for
@@ -151,6 +167,7 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
   if (active) {
     return (
       <View style={{ flex: 1, backgroundColor: '#0A1628' }}>
+        {hasGoogleMapsKey() ? (
         <MapView
           ref={mapRef}
           provider={PROVIDER_GOOGLE}
@@ -170,6 +187,11 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
             </Marker>
           )}
         </MapView>
+        ) : (
+          <MapUnavailableNotice
+            subtitle={active.status === 'accepted' ? active.pickupAddress : active.dropoffAddress}
+          />
+        )}
 
         <View style={styles.activeCard}>
           <Text style={styles.activeTitle}>

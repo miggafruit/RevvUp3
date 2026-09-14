@@ -17,6 +17,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { authColors } from '../theme/authColors';
 import { resetPassword } from '../api/authApi';
+import PasswordInput from '../components/PasswordInput';
 
 const { height } = Dimensions.get('window');
 
@@ -98,24 +99,24 @@ const ResetPasswordScreen: React.FC<Props> = ({ navigation, route }) => {
             </View>
 
             <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
+              <PasswordInput
+                inputStyle={styles.input}
                 value={password}
                 onChangeText={setPassword}
                 placeholder="New password"
                 placeholderTextColor={authColors.textSecondary}
-                secureTextEntry
+                iconColor={authColors.textSecondary}
               />
             </View>
 
             <View style={styles.inputWrapper}>
-              <TextInput
-                style={styles.input}
+              <PasswordInput
+                inputStyle={styles.input}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
                 placeholder="Confirm new password"
                 placeholderTextColor={authColors.textSecondary}
-                secureTextEntry
+                iconColor={authColors.textSecondary}
               />
             </View>
           </View>

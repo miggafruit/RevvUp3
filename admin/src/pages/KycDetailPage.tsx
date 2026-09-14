@@ -34,6 +34,12 @@ const KycDetailPage: React.FC = () => {
   if (error) return <div className="text-sm text-brand-red">{error}</div>;
   if (!user) return <div className="text-sm text-text-secondary">Loading…</div>;
 
+  const hasBankingDetails = !!(
+    user.bankingDetails?.accountHolder &&
+    user.bankingDetails?.bankName &&
+    user.bankingDetails?.branchCode
+  );
+
   return (
     <div>
       <Link to="/kyc" className="text-sm text-text-secondary hover:text-text-primary transition-colors">
@@ -60,6 +66,25 @@ const KycDetailPage: React.FC = () => {
             </button>
           </div>
         ))}
+      </div>
+
+      <div className="mb-8">
+        <h2 className="text-sm font-semibold text-text-primary mb-2">Banking Details</h2>
+        {user.bankingDetails?.accountHolder && user.bankingDetails?.bankName && user.bankingDetails?.branchCode ? (
+          <div className="bg-surface border border-border rounded-xl p-4 text-sm text-text-secondary space-y-1">
+            <p><span className="text-text-primary font-medium">Account holder:</span> {user.bankingDetails.accountHolder}</p>
+            <p><span className="text-text-primary font-medium">Bank:</span> {user.bankingDetails.bankName}</p>
+            <p><span className="text-text-primary font-medium">Account number:</span> {user.bankingDetails.accountNumber || '—'}</p>
+            <p><span className="text-text-primary font-medium">Branch code:</span> {user.bankingDetails.branchCode}</p>
+            {user.bankingDetails.accountType && (
+              <p><span className="text-text-primary font-medium">Account type:</span> {user.bankingDetails.accountType}</p>
+            )}
+          </div>
+        ) : (
+          <div className="bg-brand-red-dim border border-brand-red/40 rounded-xl p-4 text-sm text-brand-red">
+            No banking details on file yet — this account can't be approved until they add banking details from their profile.
+          </div>
+        )}
       </div>
 
       <div className="mb-4">

@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
 import { showAlert } from '../utils/crossPlatformAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from '../context/AuthContext';
-import { resubmitKyc } from '../api/authApi';
+import { resubmitKyc, getMyBankingDetails, updateProfile } from '../api/authApi';
 import { KycDocument } from '../types/auth';
 import KycUploader from '../components/KycUploader';
 import { colors } from '../theme/colors';
@@ -24,6 +24,53 @@ const KycStatusScreen: React.FC<Props> = ({ navigation }) => {
   const { user, setUser } = useAuth();
   const [documents, setDocuments] = useState<KycDocument[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankBranchCode, setBankBranchCode] = useState('');
+  const [isLoadingBanking, setIsLoadingBanking] = useState(true);
+  const [isSavingBanking, setIsSavingBanking] = useState(false);
+
+  useEffect(() => {
+    getMyBankingDetails()
+      .then((bd) => {
+        if (!bd) return;
+        setBankAccountHolder(bd.accountHolder || '');
+        setBankName(bd.bankName || '');
+        setBankAccountNumber(bd.accountNumber || '');
+        setBankBranchCode(bd.branchCode || '');
+      })
+      .catch(() => {
+        // Not fatal — the fields just start blank, same as never having
+        // submitted anything yet.
+      })
+      .finally(() => setIsLoadingBanking(false));
+  }, []);
+
+  const handleSaveBanking = async () => {
+    if (!bankAccountHolder.trim() || !bankName.trim() || !bankAccountNumber.trim() || !bankBranchCode.trim()) {
+      showAlert('Missing Information', 'Please fill in all banking fields — these are required before your account can be approved.');
+      return;
+    }
+    setIsSavingBanking(true);
+    try {
+      const updated = await updateProfile({
+        bankingDetails: {
+          accountHolder: bankAccountHolder.trim(),
+          bankName: bankName.trim(),
+          accountNumber: bankAccountNumber.trim(),
+          branchCode: bankBranchCode.trim()
+        }
+      });
+      setUser(updated);
+      showAlert('Saved', 'Your banking details have been updated.');
+    } catch (error: any) {
+      showAlert('Error', error?.response?.data?.message || 'Could not save your banking details. Please try again.');
+    } finally {
+      setIsSavingBanking(false);
+    }
+  };
 
   const status = user?.kycStatus || 'not_submitted';
   const meta = STATUS_META[status];
@@ -84,6 +131,58 @@ const KycStatusScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
         )}
 
+        <Text style={styles.sectionTitle}>Banking Details</Text>
+        <Text style={styles.helperText}>
+          This is where your payouts get sent. Required before your account can be approved.
+        </Text>
+        {isLoadingBanking ? (
+          <ActivityIndicator color={colors.accent} style={{ marginBottom: 20 }} />
+        ) : (
+          <>
+            <TextInput
+              style={styles.bankInput}
+              value={bankAccountHolder}
+              onChangeText={setBankAccountHolder}
+              placeholder="Account holder name"
+              placeholderTextColor={colors.textMuted}
+            />
+            <TextInput
+              style={[styles.bankInput, { marginTop: 10 }]}
+              value={bankName}
+              onChangeText={setBankName}
+              placeholder="Bank name"
+              placeholderTextColor={colors.textMuted}
+            />
+            <TextInput
+              style={[styles.bankInput, { marginTop: 10 }]}
+              value={bankAccountNumber}
+              onChangeText={setBankAccountNumber}
+              placeholder="Account number"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+            />
+            <TextInput
+              style={[styles.bankInput, { marginTop: 10 }]}
+              value={bankBranchCode}
+              onChangeText={setBankBranchCode}
+              placeholder="Branch code"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+            />
+            <TouchableOpacity
+              style={[styles.submitButton, { marginTop: 14 }, isSavingBanking && { opacity: 0.6 }]}
+              onPress={handleSaveBanking}
+              disabled={isSavingBanking}
+            >
+              {isSavingBanking ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.submitButtonText}>Save Banking Details</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
+
         {canResubmit && (
           <>
             <Text style={styles.sectionTitle}>
@@ -93,6 +192,7 @@ const KycStatusScreen: React.FC<Props> = ({ navigation }) => {
               role={(user?.role as 'shop' | 'service_provider') || 'service_provider'}
               documents={documents}
               onChange={setDocuments}
+              showVehicleDocument={!!user?.isDriver || (user?.roadsideServices?.length ?? 0) > 0}
             />
 
             <TouchableOpacity
@@ -154,6 +254,15 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   submitButtonText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+  bankInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: colors.textPrimary
+  },
 });
 
 export default KycStatusScreen;

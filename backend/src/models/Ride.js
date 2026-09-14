@@ -91,6 +91,20 @@ const rideSchema = new mongoose.Schema(
       type: String,
       enum: ['paystack', 'cash']
     },
+    // Cash changes hands outside the app, so the client's "I paid" tap
+    // alone isn't verifiable the way a Paystack reference is. This is a
+    // second, independent confirmation from the driver's side — it
+    // doesn't gate the client (they're already unblocked once they've
+    // reported paying), it's a record for accountability/disputes.
+    driverCashConfirmed: {
+      type: Boolean,
+      default: false
+    },
+    driverCashConfirmedAt: Date,
+    cashDisputedByDriver: {
+      type: Boolean,
+      default: false
+    },
     distanceKm: Number,
     cancelledBy: {
       type: String,

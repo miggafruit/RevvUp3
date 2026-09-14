@@ -1,9 +1,9 @@
-const axios = require('axios');
+const httpClient = require('./httpClient');
 
 // Verifies a transaction server-side with Paystack's secret key — never trust
 // a client-reported "payment succeeded" message on its own.
 const verifyPaystackTransaction = async (reference) => {
-  const response = await axios.get(
+  const response = await httpClient.get(
     `https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`,
     { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` } }
   );

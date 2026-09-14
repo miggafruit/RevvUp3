@@ -3,6 +3,8 @@ import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Linking } 
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/PlatformMap';
+import MapUnavailableNotice from '../components/MapUnavailableNotice';
+import { hasGoogleMapsKey } from '../utils/mapsConfig';
 import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
 import * as deliveryApi from '../api/deliveryApi';
@@ -193,7 +195,11 @@ const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      {driverLocation ? (
+      {!hasGoogleMapsKey() ? (
+        <View style={styles.map}>
+          <MapUnavailableNotice subtitle={delivery.dropoffAddress} />
+        </View>
+      ) : driverLocation ? (
         <MapView
           provider={PROVIDER_GOOGLE}
           googleMapsApiKey={process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY as any}

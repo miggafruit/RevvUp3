@@ -7,6 +7,8 @@ const { verifyPaystackTransaction } = require('../utils/paystack');
 const { sendPushNotifications } = require('../utils/pushNotifications');
 const { clientRoomId } = require('../utils/socketHelpers');
 const { createPayoutEntry } = require('../utils/payouts');
+const { amountMatchesExpected } = require('../utils/paymentVerification');
+const { reportSilentFailure } = require('../utils/reportSilentFailure');
 
 const TOW_SERVICE_TYPES = ['tow_sling', 'tow_rollback'];
 
@@ -187,6 +189,46 @@ const getTowEstimate = async (req, res, next) => {
     const { tier, fare } = estimateTowFare(service_type, distanceKm);
 
     return res.json({ success: true, data: { distanceKm, durationMinutes, tier, fare } });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   PATCH /api/ehailing/availability
+// @access  Private (service_provider only)
+// body: { isOnline: boolean }
+//
+// This is the piece that was entirely missing: isOnline/isAvailable
+// both default to false on every User, and until this endpoint
+// existed, NOTHING anywhere ever set isOnline to true — meaning
+// findNearbyAvailableDrivers (used for both the real-time socket
+// "new_request" broadcast and the "New job request" push
+// notification in createRequest) could never match a single driver,
+// ever, regardless of how many were using the app. The
+// accept/complete/cancel handlers below already correctly toggle
+// isAvailable during a job's lifecycle — this is just the missing
+// "start of shift" / "end of shift" switch that lets a driver enter
+// that lifecycle in the first place.
+//
+// Going online sets both flags true (a driver who's just started
+// their shift and never done a job yet has no other way to become
+// isAvailable — nothing else would ever set it for them). Going
+// offline sets both false, so an offline driver can never accidentally
+// still match a nearby-driver query.
+const setAvailability = async (req, res, next) => {
+  try {
+    const { isOnline } = req.body;
+    if (typeof isOnline !== 'boolean') {
+      return res.status(400).json({ success: false, message: 'isOnline (boolean) is required.' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.user._id,
+      { isOnline, isAvailable: isOnline },
+      { new: true }
+    ).select('isOnline isAvailable');
+
+    return res.json({ success: true, data: { isOnline: user.isOnline, isAvailable: user.isAvailable } });
   } catch (error) {
     next(error);
   }
@@ -583,6 +625,10 @@ const payRide = async (req, res, next) => {
       verification = await verifyPaystackTransaction(paymentReference);
     } catch (verifyError) {
       console.error('Paystack verification request failed:', verifyError?.response?.data || verifyError.message);
+      reportSilentFailure(verifyError, 'paystack-verification', {
+        rideId: ride._id.toString(),
+        paymentReference
+      });
       return res.status(402).json({ success: false, message: 'Could not verify payment. Please try again.' });
     }
 
@@ -597,8 +643,7 @@ const payRide = async (req, res, next) => {
       return res.status(402).json({ success: false, message: 'This payment reference does not match this request.' });
     }
 
-    const expectedAmountInCents = Math.round(ride.fare * 100);
-    if (verification.amount !== expectedAmountInCents) {
+    if (!amountMatchesExpected(verification.amount, ride.fare)) {
       return res.status(402).json({ success: false, message: "Payment amount does not match this request's fare" });
     }
 
@@ -656,6 +701,59 @@ const payCash = async (req, res, next) => {
     // touches this money, so it owes the driver nothing for it. A
     // payout entry would incorrectly claim the platform still owes
     // money it never actually collected.
+
+    // The driver has no way of knowing the client tapped "paid" unless
+    // we tell them — previously this was silent, so the driver never
+    // even saw a prompt to confirm the cash was actually handed over.
+    if (ride.driver?.driver_id) {
+      const driver = await User.findById(ride.driver.driver_id).select('pushToken');
+      if (driver) {
+        sendPushNotifications([driver], {
+          title: 'Client reported cash payment',
+          body: `They say they paid you R${ride.fare} in cash — confirm you received it in your ride history.`,
+          data: { type: 'cash_payment_reported', rideId: ride._id.toString() }
+        });
+      }
+    }
+
+    return res.status(200).json({ success: true, data: ride });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/ehailing/request/:id/confirm-cash
+// @access  Private (driver only, must be the assigned driver)
+// body: { received: boolean }  — defaults to true
+// Independent, driver-side acknowledgement that cash was actually
+// received. Does not affect ride.paymentStatus or the client's ability
+// to make new requests (that was already resolved by payCash) — this
+// exists purely so a driver isn't left with no way to confirm, dispute,
+// or have a record of a cash payment they were told about.
+const confirmCashReceived = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const received = req.body.received !== false;
+
+    const ride = await Ride.findById(id);
+    if (!ride) return res.status(404).json({ success: false, message: 'Request not found.' });
+    if (!ride.driver?.driver_id || String(ride.driver.driver_id) !== String(req.user._id)) {
+      return res.status(403).json({ success: false, message: "You're not the assigned driver for this request." });
+    }
+    if (ride.paymentMethod !== 'cash') {
+      return res.status(400).json({ success: false, message: 'This request was not paid by cash.' });
+    }
+
+    if (received) {
+      ride.driverCashConfirmed = true;
+      ride.driverCashConfirmedAt = new Date();
+      ride.cashDisputedByDriver = false;
+    } else {
+      ride.driverCashConfirmed = false;
+      ride.cashDisputedByDriver = true;
+    }
+    await ride.save();
+
     return res.status(200).json({ success: true, data: ride });
   } catch (error) {
     next(error);
@@ -665,6 +763,7 @@ const payCash = async (req, res, next) => {
 module.exports = {
   createRequest,
   getTowEstimate,
+  setAvailability,
   getPendingRequests,
   acceptRequest,
   updateDriverLocation,
@@ -674,5 +773,6 @@ module.exports = {
   getRequest,
   getHistory,
   payRide,
-  payCash
+  payCash,
+  confirmCashReceived
 };

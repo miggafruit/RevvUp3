@@ -14,3 +14,13 @@ export const getProviders = async (
   const { data } = await apiClient.get('/businesses/providers', { params });
   return data;
 };
+
+export const getShopById = async (id: string): Promise<ShopListing> => {
+  const { data } = await apiClient.get('/businesses/shops/' + id);
+  return data.shop;
+};
+
+export const getProviderById = async (id: string): Promise<ProviderListing> => {
+  const { data } = await apiClient.get('/businesses/providers/' + id);
+  return data.provider;
+};

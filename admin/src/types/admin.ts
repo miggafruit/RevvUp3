@@ -27,6 +27,14 @@ export interface KycDocument {
   image: string;
 }
 
+export interface BankingDetails {
+  accountHolder?: string;
+  bankName?: string;
+  accountNumber?: string;
+  branchCode?: string;
+  accountType?: string;
+}
+
 export interface KycQueueItem {
   _id: string;
   name: string;
@@ -37,6 +45,7 @@ export interface KycQueueItem {
   businessAddress?: string;
   category?: string;
   kycDocuments: KycDocument[];
+  bankingDetails?: BankingDetails;
   createdAt: string;
 }
 
@@ -46,6 +55,7 @@ export interface Revenue {
   week: number;
   month: number;
   bySource: { rides: number; orders: number; promotions: number };
+  platformEarnings: number;
   dailySeries: { date: string; total: number }[];
 }
 
@@ -128,4 +138,38 @@ export interface OrderListItem {
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   paymentStatus: string;
   createdAt: string;
+}
+
+export interface PayoutRecipient {
+  _id: string;
+  name: string;
+  email: string;
+  phone: string;
+  role: string;
+  businessName?: string;
+}
+
+export interface PayoutSummaryItem {
+  recipient: PayoutRecipient | null;
+  recipientId: string;
+  totalOwed: number;
+  entryCount: number;
+}
+
+export interface PayoutEntry {
+  _id: string;
+  amount: number;
+  grossAmount?: number;
+  platformCut?: number;
+  sourceType: 'ride_fare' | 'order_seller_share' | 'delivery_fee';
+  sourceId: string;
+  status: 'owed' | 'paid';
+  paidAt?: string;
+  note?: string;
+  createdAt: string;
+}
+
+export interface PayoutDetail {
+  recipient: PayoutRecipient;
+  entries: PayoutEntry[];
 }

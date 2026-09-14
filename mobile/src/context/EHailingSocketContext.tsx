@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { SOCKET_URL, ACCESS_TOKEN_KEY } from '../api/client';
 import { useAuth } from './AuthContext';
+import { Sentry } from '../config/sentry';
 
 interface EHailingSocketContextValue {
   socket: Socket | null;
@@ -61,9 +62,25 @@ export const EHailingSocketProvider: React.FC<{ children: React.ReactNode }> = (
       s.on('disconnect', (reason) => {
         console.log('[socket] disconnected:', reason);
         setIsConnected(false);
+        Sentry.addBreadcrumb({ category: 'socket', message: `Disconnected: ${reason}`, level: 'warning' });
       });
       s.on('connect_error', (err) => {
         console.warn('[socket] connect_error:', err.message);
+        Sentry.addBreadcrumb({ category: 'socket', message: `Connect error: ${err.message}`, level: 'warning' });
+      });
+      // socket.io-client reconnects automatically by default — these
+      // just make a *prolonged* reconnection struggle visible, since
+      // isConnected alone (surfaced via ConnectionStatusBanner) covers
+      // the simple "connected or not" case already. A driver mid-tow
+      // whose connection can't recover for many attempts is worth
+      // knowing about even though the socket layer keeps quietly
+      // retrying underneath — that's exactly the kind of thing that
+      // should surface as an alert, not just an infinite silent retry
+      // loop nobody finds out about until a job goes wrong.
+      s.on('reconnect_attempt', (attempt) => {
+        if (attempt === 5 || attempt === 15) {
+          Sentry.captureMessage(`Socket reconnect attempt #${attempt}`, { level: 'warning', tags: { area: 'socket' } });
+        }
       });
 
       socketRef.current = s;

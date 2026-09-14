@@ -19,6 +19,7 @@ import { useAuth } from '../context/AuthContext';
 import { UserRole } from '../types/auth';
 import { authColors as c } from '../theme/authColors';
 import BrandDivider from '../components/BrandDivider';
+import PasswordInput from '../components/PasswordInput';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -84,13 +85,13 @@ const LoginScreen: React.FC<Props> = ({ navigation }) => {
             <View style={[styles.iconCircle, { backgroundColor: c.iconCircleNeutral }]}>
               <View style={styles.passwordDot} />
             </View>
-            <TextInput
-              style={styles.input}
+            <PasswordInput
+              inputStyle={styles.input}
               value={password}
               onChangeText={setPassword}
               placeholder="Password"
               placeholderTextColor={c.textMuted}
-              secureTextEntry
+              iconColor={c.textMuted}
             />
           </View>
 

@@ -42,10 +42,22 @@ const ShopDashboardScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.bigCardSubtitle}>View and manage orders placed by clients</Text>
         </TouchableOpacity>
 
+        <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('PartInquiries')}>
+          <Text style={styles.bigCardEmoji}>💬</Text>
+          <Text style={styles.bigCardTitle}>Part Inquiries</Text>
+          <Text style={styles.bigCardSubtitle}>See what clients are asking about</Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('MyPromotions')}>
           <Text style={styles.bigCardEmoji}>🏷️</Text>
           <Text style={styles.bigCardTitle}>My Promotions</Text>
           <Text style={styles.bigCardSubtitle}>Boost your shop's visibility to clients</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('EditBusinessProfile')}>
+          <Text style={styles.bigCardEmoji}>🪪</Text>
+          <Text style={styles.bigCardTitle}>Edit Profile</Text>
+          <Text style={styles.bigCardSubtitle}>Add a photo, qualifications, and portfolio images</Text>
         </TouchableOpacity>
 
         <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('KycStatus')}>

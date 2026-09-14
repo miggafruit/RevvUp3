@@ -88,6 +88,13 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
   // Only true once payment has actually gone through — this is the sole
   // condition that reveals the Track Delivery button below.
   const isPaidConfirmed = (order.status === 'confirmed' || order.status === 'completed') && order.paymentStatus === 'paid';
+  // A service-only order never gets a Delivery record created for it at
+  // all (see deliveryController.createDeliveryForOrder — it returns
+  // null when there are no product line items), so "Track Delivery"
+  // used to be shown for those too, sending the client to a screen with
+  // nothing to actually track.
+  const hasProductItems = order.items?.some((item) => item.itemType === 'product') ?? false;
+  const canTrackDelivery = isPaidConfirmed && hasProductItems;
   const isCancelled = order.status === 'cancelled';
 
   return (
@@ -168,8 +175,8 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
           </TouchableOpacity>
         )}
 
-        {/* Only rendered once paymentStatus === 'paid' — see isPaidConfirmed above */}
-        {isPaidConfirmed && (
+        {/* Only rendered once paid AND the order actually has a physical product to deliver */}
+        {canTrackDelivery && (
           <TouchableOpacity
             style={[styles.doneButton, { marginBottom: spacing.md }]}
             onPress={() => navigation.navigate('DeliveryTracking', { orderId: order._id })}

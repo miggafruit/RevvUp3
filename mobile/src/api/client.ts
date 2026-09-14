@@ -1,6 +1,7 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
+import { Sentry } from '../config/sentry';
 
 // Production reads from EXPO_PUBLIC_API_BASE_URL (set this in Vercel's
 // environment variables and in eas.json's production build profile).
@@ -39,6 +40,18 @@ apiClient.interceptors.request.use(async (config: InternalAxiosRequestConfig) =>
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  // A breadcrumb trail of recent API calls is exactly what's missing
+  // when a bug report shows up as "user X hit an error" with no
+  // context — this means whatever Sentry event eventually gets
+  // captured (from anywhere in the app, not just from here) carries
+  // the last several API calls leading up to it. No bodies/tokens
+  // included, just method + path, which is enough to reconstruct what
+  // the user was doing.
+  Sentry.addBreadcrumb({
+    category: 'http.request',
+    message: `${config.method?.toUpperCase()} ${config.url}`,
+    level: 'info'
+  });
   return config;
 });
 
@@ -46,9 +59,46 @@ let isRefreshing = false;
 let pendingRequests: Array<() => void> = [];
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    Sentry.addBreadcrumb({
+      category: 'http.response',
+      message: `${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`,
+      level: 'info'
+    });
+    return response;
+  },
   async (error: AxiosError) => {
     const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
+
+    // Deliberately selective about what gets reported here:
+    //  - No response at all (offline, DNS failure, request timeout) is
+    //    just normal mobile connectivity — reporting every one of
+    //    these would flood Sentry with noise that isn't actionable on
+    //    the backend, so this only adds a breadcrumb, not a captured
+    //    event.
+    //  - 4xx responses are the server correctly rejecting a bad
+    //    request (validation, auth, etc.) — expected behavior, not a
+    //    bug to alert on.
+    //  - 5xx responses ARE a real backend bug affecting a real user
+    //    right now, and those get captured so they show up in Sentry
+    //    even if nobody happens to be looking at the server logs at
+    //    that exact moment.
+    if (!error.response) {
+      Sentry.addBreadcrumb({
+        category: 'http.error',
+        message: `Network error: ${error.config?.method?.toUpperCase()} ${error.config?.url}`,
+        level: 'warning'
+      });
+    } else if (error.response.status >= 500) {
+      Sentry.captureException(error, {
+        tags: { area: 'api-client' },
+        extra: {
+          url: error.config?.url,
+          method: error.config?.method,
+          status: error.response.status
+        }
+      });
+    }
 
     const isTokenExpired =
       error.response?.status === 401 &&

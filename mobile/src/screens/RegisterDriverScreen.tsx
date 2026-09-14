@@ -17,7 +17,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import WaiverModal from '../components/WaiverModal';
 import KycUploader from '../components/KycUploader';
-import { RegisterPayload, KycDocument } from '../types/auth';
+import PasswordInput from '../components/PasswordInput';
+import { RegisterPayload, KycDocument, BankingDetails } from '../types/auth';
 import { ROADSIDE_SERVICE_OPTIONS } from '../constants/roadsideServices';
 import { colors } from '../theme/colors';
 
@@ -37,6 +38,10 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
   const [licensePlate, setLicensePlate] = useState('');
   const [roadsideServices, setRoadsideServices] = useState<string[]>([]);
   const [kycDocuments, setKycDocuments] = useState<KycDocument[]>([]);
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankBranchCode, setBankBranchCode] = useState('');
 
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [waiverModalVisible, setWaiverModalVisible] = useState(false);
@@ -83,7 +88,17 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
         licensePlate: licensePlate.trim().toUpperCase()
       },
       waiverAccepted: true,
-      ...(kycDocuments.length > 0 ? { kycDocuments } : {})
+      ...(kycDocuments.length > 0 ? { kycDocuments } : {}),
+      ...(bankAccountHolder.trim() || bankName.trim() || bankAccountNumber.trim() || bankBranchCode.trim()
+        ? {
+            bankingDetails: {
+              accountHolder: bankAccountHolder.trim() || undefined,
+              bankName: bankName.trim() || undefined,
+              accountNumber: bankAccountNumber.trim() || undefined,
+              branchCode: bankBranchCode.trim() || undefined
+            } as BankingDetails
+          }
+        : {})
     };
 
     setIsSubmitting(true);
@@ -170,6 +185,10 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
             placeholder="e.g. GP 12 ABC"
             autoCapitalize="characters"
           />
+          <Text style={styles.approvalNote}>
+            ⓘ You can register now, but you won't be dispatched any delivery or roadside/towing jobs until
+            an admin reviews your ID and vehicle documents below and approves your account.
+          </Text>
 
           <Text style={styles.sectionHeading}>Roadside Assistance (optional)</Text>
           <Text style={styles.kycNote}>
@@ -199,21 +218,23 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
           </View>
 
           <Text style={styles.label}>Password</Text>
-          <TextInput placeholderTextColor={colors.textMuted}
-            style={styles.input}
+          <PasswordInput
+            containerStyle={styles.input}
+            inputStyle={{ color: colors.textPrimary, fontSize: 15 }}
+            placeholderTextColor={colors.textMuted}
             value={password}
             onChangeText={setPassword}
             placeholder="At least 6 characters"
-            secureTextEntry
           />
 
           <Text style={styles.label}>Confirm Password</Text>
-          <TextInput placeholderTextColor={colors.textMuted}
-            style={styles.input}
+          <PasswordInput
+            containerStyle={styles.input}
+            inputStyle={{ color: colors.textPrimary, fontSize: 15 }}
+            placeholderTextColor={colors.textMuted}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Re-enter password"
-            secureTextEntry
           />
 
           <Text style={[styles.label, { marginTop: 24 }]}>
@@ -223,7 +244,42 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
             Uploading your driver's license and ID helps us verify you faster so you can start
             accepting delivery and roadside jobs sooner.
           </Text>
-          <KycUploader role="service_provider" documents={kycDocuments} onChange={setKycDocuments} />
+          <KycUploader role="service_provider" documents={kycDocuments} onChange={setKycDocuments} showVehicleDocument />
+
+          <Text style={[styles.label, { marginTop: 24 }]}>
+            Banking Details <Text style={styles.optional}>(optional — required before approval)</Text>
+          </Text>
+          <Text style={styles.kycNote}>
+            This is where your payouts get sent. You can add it now or later from your profile, but your
+            account can't be approved without it.
+          </Text>
+
+          <TextInput placeholderTextColor={colors.textMuted}
+            style={styles.input}
+            value={bankAccountHolder}
+            onChangeText={setBankAccountHolder}
+            placeholder="Account holder name"
+          />
+          <TextInput placeholderTextColor={colors.textMuted}
+            style={[styles.input, { marginTop: 10 }]}
+            value={bankName}
+            onChangeText={setBankName}
+            placeholder="Bank name"
+          />
+          <TextInput placeholderTextColor={colors.textMuted}
+            style={[styles.input, { marginTop: 10 }]}
+            value={bankAccountNumber}
+            onChangeText={setBankAccountNumber}
+            placeholder="Account number"
+            keyboardType="number-pad"
+          />
+          <TextInput placeholderTextColor={colors.textMuted}
+            style={[styles.input, { marginTop: 10 }]}
+            value={bankBranchCode}
+            onChangeText={setBankBranchCode}
+            placeholder="Branch code"
+            keyboardType="number-pad"
+          />
 
           <TouchableOpacity style={styles.waiverRow} onPress={() => setWaiverModalVisible(true)}>
             <View style={[styles.checkbox, waiverAccepted && styles.checkboxChecked]}>
@@ -306,6 +362,13 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginBottom: 12,
     lineHeight: 18
+  },
+  approvalNote: {
+    fontSize: 12,
+    color: colors.accent,
+    marginTop: 10,
+    marginBottom: 4,
+    lineHeight: 17
   },
   serviceChipRow: {
     flexDirection: 'row',

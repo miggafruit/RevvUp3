@@ -1,10 +1,14 @@
 const mongoose = require('mongoose');
 const Cart = require('../models/Cart');
 const Order = require('../models/Order');
+const User = require('../models/User');
 const { verifyPaystackTransaction } = require('../utils/paystack');
 const { createDeliveryForOrder } = require('./deliveryController');
 const { getDeliveryFee } = require('../config/deliveryPricing');
 const { createPayoutEntry } = require('../utils/payouts');
+const { sendPushNotifications } = require('../utils/pushNotifications');
+const { amountMatchesExpected } = require('../utils/paymentVerification');
+const { reportSilentFailure } = require('../utils/reportSilentFailure');
 
 // @route   POST /api/orders/checkout
 // @access  Private (client only)
@@ -88,6 +92,17 @@ const checkout = async (req, res, next) => {
 
     cart.items = [];
     await cart.save();
+
+    // Previously silent — sellers had no way of knowing a new order had
+    // come in except by manually opening the app and checking, which is
+    // exactly what testers flagged ("notifications are non-existent").
+    const sellerIds = [...new Set(orderItems.map((item) => item.sellerSnapshot.toString()))];
+    const sellers = await User.find({ _id: { $in: sellerIds } }).select('pushToken');
+    sendPushNotifications(sellers, {
+      title: 'New order received',
+      body: `You have a new order with ${orderItems.length} item${orderItems.length === 1 ? '' : 's'} — open the app to accept or decline.`,
+      data: { type: 'new_order', orderId: order._id.toString() }
+    });
 
     res.status(201).json({ order });
   } catch (error) {
@@ -195,6 +210,18 @@ const updateOrderStatus = async (req, res, next) => {
 
     await order.save();
 
+    const client = await User.findById(order.client).select('pushToken');
+    if (client) {
+      sendPushNotifications([client], {
+        title: status === 'confirmed' ? 'Order accepted!' : 'Order declined',
+        body:
+          status === 'confirmed'
+            ? 'The seller accepted your order. Open the app to pay and finish checkout.'
+            : 'The seller was unable to fulfil your order this time.',
+        data: { type: 'order_status_changed', orderId: order._id.toString(), status }
+      });
+    }
+
     res.status(200).json({ order });
   } catch (error) {
     next(error);
@@ -257,6 +284,15 @@ const completeServiceOrder = async (req, res, next) => {
       });
     }
 
+    const client = await User.findById(order.client).select('pushToken');
+    if (client) {
+      sendPushNotifications([client], {
+        title: 'Service completed',
+        body: 'Your provider marked this service as done — you can rate them from your orders.',
+        data: { type: 'order_status_changed', orderId: order._id.toString(), status: 'completed' }
+      });
+    }
+
     res.status(200).json({ order });
   } catch (error) {
     next(error);
@@ -299,6 +335,15 @@ const payOrder = async (req, res, next) => {
       verification = await verifyPaystackTransaction(paymentReference);
     } catch (verifyError) {
       console.error('Paystack verification request failed:', verifyError?.response?.data || verifyError.message);
+      // The user gets a clean "try again" — but if Paystack itself is
+      // down or misconfigured, every payment attempt will fail this
+      // way and every affected user will just quietly give up rather
+      // than file a support ticket. Reported so a spike in these shows
+      // up as an alert, not as a slow trickle of unexplained churn.
+      reportSilentFailure(verifyError, 'paystack-verification', {
+        orderId: order._id.toString(),
+        paymentReference
+      });
       return res.status(402).json({ message: 'Could not verify payment. Please try again.' });
     }
 
@@ -317,14 +362,21 @@ const payOrder = async (req, res, next) => {
       return res.status(402).json({ message: 'This payment reference does not match this order.' });
     }
 
-    const expectedAmountInCents = Math.round(order.totalAmount * 100);
-    if (verification.amount !== expectedAmountInCents) {
+    if (!amountMatchesExpected(verification.amount, order.totalAmount)) {
       return res.status(402).json({ message: "Payment amount does not match this order's total" });
     }
 
     order.paymentStatus = 'paid';
     order.paymentReference = paymentReference;
     await order.save();
+
+    const sellerIds = [...new Set(order.items.map((item) => item.sellerSnapshot.toString()))];
+    const sellers = await User.find({ _id: { $in: sellerIds } }).select('pushToken');
+    sendPushNotifications(sellers, {
+      title: 'Payment received',
+      body: `The client paid R${order.totalAmount} — you can start preparing this order.`,
+      data: { type: 'order_paid', orderId: order._id.toString() }
+    });
 
     // Order is now both accepted and paid — this is the moment a physical
     // delivery job (if the order has any products) gets created and pushed
@@ -335,7 +387,15 @@ const payOrder = async (req, res, next) => {
     } catch (deliveryError) {
       // A delivery-creation failure should never block a successful payment
       // from being recorded — log it and let the order stand as paid.
+      // But this is exactly the kind of failure a client would only ever
+      // discover by waiting for a delivery that's never coming — reported
+      // with the order id so an admin can manually create the delivery or
+      // refund, ideally before the client notices anything is wrong.
       console.error(`Failed to create delivery for order ${order._id}:`, deliveryError);
+      reportSilentFailure(deliveryError, 'delivery-creation', {
+        orderId: order._id.toString(),
+        totalAmount: order.totalAmount
+      });
     }
 
     res.status(200).json({ order });

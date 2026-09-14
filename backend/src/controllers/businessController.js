@@ -8,7 +8,11 @@ const Service = require('../models/Service');
 const getShops = async (req, res, next) => {
   try {
     const { search, category, page = 1, limit = 20 } = req.query;
-    const query = { role: 'shop' };
+    // Only list shops that have actually passed KYC — previously any
+    // newly registered shop account was immediately public here with
+    // full visibility, regardless of whether verification had even
+    // been submitted, let alone approved.
+    const query = { role: 'shop', kycStatus: 'approved' };
 
     if (search) {
       query.$or = [
@@ -25,7 +29,7 @@ const getShops = async (req, res, next) => {
 
     const [shops, total] = await Promise.all([
       User.find(query)
-        .select('name businessName businessAddress category createdAt')
+        .select('name businessName businessAddress category profilePhoto createdAt')
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum),
@@ -71,8 +75,8 @@ const getShops = async (req, res, next) => {
 // @access  Public
 const getShopById = async (req, res, next) => {
   try {
-    const shop = await User.findOne({ _id: req.params.id, role: 'shop' }).select(
-      'name businessName businessAddress category createdAt'
+    const shop = await User.findOne({ _id: req.params.id, role: 'shop', kycStatus: 'approved' }).select(
+      'name businessName businessAddress category profilePhoto qualifications portfolioImages profileVideoUrl createdAt'
     );
 
     if (!shop) {
@@ -90,7 +94,9 @@ const getShopById = async (req, res, next) => {
 const getProviders = async (req, res, next) => {
   try {
     const { search, category, page = 1, limit = 20 } = req.query;
-    const query = { role: 'service_provider' };
+    // Same fix as getShops above — service providers must be
+    // KYC-approved before they're publicly listed.
+    const query = { role: 'service_provider', kycStatus: 'approved' };
 
     if (search) {
       query.$or = [
@@ -107,7 +113,7 @@ const getProviders = async (req, res, next) => {
 
     const [providers, total] = await Promise.all([
       User.find(query)
-        .select('name businessName businessAddress category createdAt')
+        .select('name businessName businessAddress category profilePhoto createdAt')
         .sort({ createdAt: -1 })
         .skip((pageNum - 1) * limitNum)
         .limit(limitNum),
@@ -152,8 +158,8 @@ const getProviders = async (req, res, next) => {
 // @access  Public
 const getProviderById = async (req, res, next) => {
   try {
-    const provider = await User.findOne({ _id: req.params.id, role: 'service_provider' }).select(
-      'name businessName businessAddress category createdAt'
+    const provider = await User.findOne({ _id: req.params.id, role: 'service_provider', kycStatus: 'approved' }).select(
+      'name businessName businessAddress category profilePhoto qualifications portfolioImages profileVideoUrl createdAt'
     );
 
     if (!provider) {

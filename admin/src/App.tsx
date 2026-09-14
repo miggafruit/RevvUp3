@@ -14,6 +14,8 @@ import RideDetailPage from './pages/RideDetailPage';
 import OrdersPage from './pages/OrdersPage';
 import OrderDetailPage from './pages/OrderDetailPage';
 import RevenuePage from './pages/RevenuePage';
+import PayoutsPage from './pages/PayoutsPage';
+import PayoutDetailPage from './pages/PayoutDetailPage';
 
 const App: React.FC = () => {
   return (
@@ -117,6 +119,26 @@ const App: React.FC = () => {
               <ProtectedRoute>
                 <Layout>
                   <RevenuePage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payouts"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <PayoutsPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payouts/:recipientId"
+            element={
+              <ProtectedRoute>
+                <Layout>
+                  <PayoutDetailPage />
                 </Layout>
               </ProtectedRoute>
             }

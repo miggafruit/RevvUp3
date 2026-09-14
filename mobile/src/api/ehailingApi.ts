@@ -55,7 +55,19 @@ export const payRide = (id: string, paymentReference: string) =>
 export const payCash = (id: string) =>
   apiClient.post(`/ehailing/request/${id}/pay-cash`).then((r) => r.data);
 
+export const confirmCashReceived = (id: string, received: boolean = true) =>
+  apiClient.post(`/ehailing/request/${id}/confirm-cash`, { received }).then((r) => r.data);
+
 // ─── DRIVER ──────────────────────────────────────────────────────────────────
+
+// Previously nothing ever called this (it didn't exist on the backend
+// either) — isOnline defaulted to false and stayed there forever, so
+// real-time dispatch (the socket broadcast + push notification in
+// createRequest) could never actually reach any driver. This is what
+// a driver going "online" in the app should actually do server-side,
+// not just a local UI state flip.
+export const setAvailability = (isOnline: boolean) =>
+  apiClient.patch("/ehailing/availability", { isOnline }).then((r) => r.data);
 
 export const getPendingRequests = () =>
   apiClient.get("/ehailing/requests/pending").then((r) => r.data);

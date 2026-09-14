@@ -8,8 +8,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from "../context/AuthContext";
 import * as promotionApi from "../api/promotionApi";
 import { Promotion } from "../types/marketplace";
-
-const PAYSTACK_PUBLIC_KEY = process.env.EXPO_PUBLIC_PAYSTACK_PUBLIC_KEY || "pk_live_22278ba900dd630d93cfffbb18b9ee73cebd2f1a";
+import { getPaystackPublicKey } from "../utils/paystackConfig";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PromotionPayment'>;
 
@@ -80,6 +79,19 @@ export default function PromotionPaymentScreen({ navigation, route }: Props) {
   const lastName = nameParts.slice(1).join(" ") || "";
   const payerPhone = user?.phone || "";
 
+  let paystackPublicKey: string;
+  try {
+    paystackPublicKey = getPaystackPublicKey();
+  } catch (error: any) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24 }}>
+          {error.message}
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
   const html = `
   <html>
     <body>
@@ -87,7 +99,7 @@ export default function PromotionPaymentScreen({ navigation, route }: Props) {
       <script>
         function pay(){
           var handler = PaystackPop.setup({
-            key: '${PAYSTACK_PUBLIC_KEY}',
+            key: '${paystackPublicKey}',
             email: '${escapeForJs(payerEmail)}',
             firstname: '${escapeForJs(firstName)}',
             lastname: '${escapeForJs(lastName)}',

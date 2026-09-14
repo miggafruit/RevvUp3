@@ -27,6 +27,9 @@ export type RootStackParamList = {
   Orders: undefined;
   RateOrder: { orderId: string };
   IncomingOrders: undefined;
+  PartInquiries: undefined;
+  MyInquiries: undefined;
+  EditBusinessProfile: undefined;
 
   IncomingDeliveries: undefined;
   DeliveryTracking: { orderId: string };

@@ -9,7 +9,8 @@ const navItems = [
   { to: '/users', label: 'Users', icon: '◎' },
   { to: '/rides', label: 'Roadside & Tow', icon: '◐' },
   { to: '/orders', label: 'Orders', icon: '◑' },
-  { to: '/revenue', label: 'Revenue', icon: '◆' }
+  { to: '/revenue', label: 'Revenue', icon: '◆' },
+  { to: '/payouts', label: 'Payouts', icon: '◒' }
 ];
 
 const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {

@@ -53,6 +53,37 @@ const userSchema = new mongoose.Schema(
       trim: true
     },
 
+    // Public-facing profile content — previously there was nowhere at
+    // all to add a profile photo, describe qualifications/experience,
+    // or show portfolio images, which testers flagged directly.
+    // Base64 data URIs, same storage pattern already used for
+    // kycDocuments images. Actual video FILES are deliberately not
+    // stored here — base64-in-Mongo doesn't scale to video (16MB
+    // document limit, no streaming) — profileVideoUrl instead accepts
+    // a link to externally-hosted video (YouTube, etc.), which is the
+    // realistic way to support video without a dedicated media
+    // storage service.
+    profilePhoto: {
+      type: String
+    },
+    qualifications: {
+      type: String,
+      trim: true,
+      maxlength: 2000
+    },
+    portfolioImages: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (arr) => arr.length <= 12,
+        message: 'You can add up to 12 portfolio images.'
+      }
+    },
+    profileVideoUrl: {
+      type: String,
+      trim: true
+    },
+
     // Drivers are service_provider accounts with isDriver: true — this
     // covers DELIVERY only (shop orders to a client's address, any
     // vehicle). It's intentionally separate from roadsideServices below:
@@ -80,6 +111,24 @@ const userSchema = new mongoose.Schema(
       make: { type: String, trim: true },
       model: { type: String, trim: true },
       licensePlate: { type: String, trim: true }
+    },
+
+    // Where payouts actually go — testers flagged that registration
+    // never asked for this at all, even though service_provider/shop/
+    // driver accounts all accrue money owed to them (see
+    // PayoutEntry.js). Optional at registration time, same pattern as
+    // kycDocuments below, but reviewKyc (adminController) now requires
+    // it be filled in before an account can be approved — someone can't
+    // actually be paid without it, so approval shouldn't happen without
+    // it either. accountNumber is select: false so it isn't accidentally
+    // included in ordinary User queries; only explicitly selected for
+    // admin review.
+    bankingDetails: {
+      accountHolder: { type: String, trim: true },
+      bankName: { type: String, trim: true },
+      accountNumber: { type: String, trim: true, select: false },
+      branchCode: { type: String, trim: true },
+      accountType: { type: String, trim: true }
     },
 
     // Shared by both delivery drivers and roadside responders — location
@@ -229,6 +278,10 @@ userSchema.methods.toSafeObject = function () {
     businessName: this.businessName,
     businessAddress: this.businessAddress,
     category: this.category,
+    profilePhoto: this.profilePhoto,
+    qualifications: this.qualifications,
+    portfolioImages: this.portfolioImages,
+    profileVideoUrl: this.profileVideoUrl,
     isDriver: this.isDriver,
     roadsideServices: this.roadsideServices,
     vehicleDetails: this.vehicleDetails,
@@ -238,6 +291,14 @@ userSchema.methods.toSafeObject = function () {
     kycStatus: this.kycStatus,
     kycReviewNote: this.kycReviewNote,
     kycDocumentCount: this.kycDocuments?.length || 0,
+    // Deliberately just a status flag, not the account number itself —
+    // toSafeObject() feeds general auth responses (login/register/getMe),
+    // and banking details shouldn't ride along on every one of those.
+    bankingDetailsSubmitted: !!(
+      this.bankingDetails?.accountHolder &&
+      this.bankingDetails?.bankName &&
+      this.bankingDetails?.branchCode
+    ),
     createdAt: this.createdAt
   };
 };

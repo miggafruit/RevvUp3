@@ -3,6 +3,8 @@ const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { generateAccessToken, generateRefreshToken } = require('../utils/generateTokens');
 const { sendPasswordResetEmail } = require('../utils/sendEmail');
+const { sendPushNotifications } = require('../utils/pushNotifications');
+const Sentry = require('../config/sentry');
 const { VALID_ROADSIDE_SERVICES } = require('../config/roadsideServices');
 
 // @route   POST /api/auth/register
@@ -22,7 +24,8 @@ const register = async (req, res, next) => {
       kycDocuments,
       isDriver,
       roadsideServices,
-      vehicleDetails
+      vehicleDetails,
+      bankingDetails
     } = req.body;
 
     if (!name || !email || !phone || !password || !role) {
@@ -58,6 +61,20 @@ const register = async (req, res, next) => {
     // with no vehicle info at all.
     const offersDispatchableWork = role === 'service_provider' && (!!isDriver || validRoadsideServices.length > 0);
 
+    // Only picked up for roles that actually get paid out (see
+    // PayoutEntry.js) — optional at registration, same as kycDocuments,
+    // but required before reviewKyc can approve the account.
+    const validBankingDetails =
+      role !== 'client' && bankingDetails && typeof bankingDetails === 'object'
+        ? {
+            accountHolder: bankingDetails.accountHolder,
+            bankName: bankingDetails.bankName,
+            accountNumber: bankingDetails.accountNumber,
+            branchCode: bankingDetails.branchCode,
+            accountType: bankingDetails.accountType
+          }
+        : undefined;
+
     const user = await User.create({
       name,
       email,
@@ -70,6 +87,7 @@ const register = async (req, res, next) => {
       isDriver: role === 'service_provider' ? !!isDriver : false,
       roadsideServices: validRoadsideServices,
       vehicleDetails: offersDispatchableWork ? vehicleDetails : undefined,
+      bankingDetails: validBankingDetails,
       waiverAccepted: true,
       waiverAcceptedAt: new Date(),
       kycDocuments: validKycDocuments,
@@ -190,6 +208,25 @@ const getMe = async (req, res, next) => {
   }
 };
 
+// @route   GET /api/auth/banking-details
+// @access  Private
+// The full banking details (including accountNumber, which is
+// select:false and so left out of the ordinary user document/
+// toSafeObject()) — only ever the account's own, via an explicit
+// select, never anyone else's. Lets a settings screen show what's
+// currently on file instead of only ever accepting blind overwrites.
+const getMyBankingDetails = async (req, res, next) => {
+  try {
+    if (req.user.role === 'client') {
+      return res.status(400).json({ message: 'Client accounts do not have banking details.' });
+    }
+    const user = await User.findById(req.user._id).select('+bankingDetails.accountNumber');
+    res.status(200).json({ bankingDetails: user?.bankingDetails || null });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @route   PATCH /api/auth/me
 // @access  Private
 // Lets an existing account update business details and opt into (or
@@ -205,7 +242,12 @@ const updateProfile = async (req, res, next) => {
       category,
       isDriver,
       roadsideServices,
-      vehicleDetails
+      vehicleDetails,
+      bankingDetails,
+      profilePhoto,
+      qualifications,
+      portfolioImages,
+      profileVideoUrl
     } = req.body;
 
     const user = req.user;
@@ -213,6 +255,34 @@ const updateProfile = async (req, res, next) => {
     if (businessName !== undefined) user.businessName = businessName;
     if (businessAddress !== undefined) user.businessAddress = businessAddress;
     if (category !== undefined) user.category = category;
+
+    // Public-facing profile content — a photo, a qualifications/bio
+    // write-up, portfolio images, and an optional video link. Testers
+    // flagged that there was previously no way to add any of this at
+    // all. Restricted to non-client roles, same as bankingDetails —
+    // this is "represent your business to clients" content, not
+    // something a client account needs.
+    if (user.role !== 'client') {
+      if (profilePhoto !== undefined) user.profilePhoto = profilePhoto || undefined;
+      if (qualifications !== undefined) user.qualifications = qualifications;
+      if (profileVideoUrl !== undefined) user.profileVideoUrl = profileVideoUrl || undefined;
+      if (portfolioImages !== undefined) {
+        user.portfolioImages = Array.isArray(portfolioImages) ? portfolioImages.slice(0, 12) : [];
+      }
+    }
+
+    // Editable after registration too — not just at signup — so an
+    // account can add or correct their payout details later without
+    // needing to re-register.
+    if (user.role !== 'client' && bankingDetails && typeof bankingDetails === 'object') {
+      user.bankingDetails = {
+        accountHolder: bankingDetails.accountHolder,
+        bankName: bankingDetails.bankName,
+        accountNumber: bankingDetails.accountNumber,
+        branchCode: bankingDetails.branchCode,
+        accountType: bankingDetails.accountType
+      };
+    }
 
     if (user.role === 'service_provider') {
       if (isDriver !== undefined) user.isDriver = !!isDriver;
@@ -345,6 +415,11 @@ const forgotPassword = async (req, res, next) => {
       user.resetPasswordExpires = undefined;
       await user.save({ validateBeforeSave: false });
       console.error('Failed to send password reset email:', emailError);
+      // Caught here (not passed to next()), so Sentry's Express error
+      // handler never sees this on its own — capture it explicitly so
+      // "password reset emails are broken" doesn't go unnoticed just
+      // because it's handled gracefully instead of crashing.
+      Sentry.captureException(emailError);
       return res.status(500).json({ message: 'Could not send reset email. Please try again shortly.' });
     }
 
@@ -385,10 +460,20 @@ const resetPassword = async (req, res, next) => {
     user.refreshToken = undefined;
     await user.save();
 
+    // Confirms the change went through and gives the account owner a
+    // signal to act on if this wasn't actually them — previously this
+    // was completely silent, so there was no notification of any kind
+    // when a password was changed.
+    sendPushNotifications([user], {
+      title: 'Password changed',
+      body: "Your RevvUp password was just reset. If this wasn't you, contact support right away.",
+      data: { type: 'password_reset' }
+    });
+
     res.status(200).json({ message: 'Your password has been reset. Please log in.' });
   } catch (error) {
     next(error);
   }
 };
 
-module.exports = { register, login, refresh, logout, getMe, updateProfile, resubmitKyc, registerPushToken, forgotPassword, resetPassword };
+module.exports = { register, login, refresh, logout, getMe, getMyBankingDetails, updateProfile, resubmitKyc, registerPushToken, forgotPassword, resetPassword };

@@ -6,6 +6,7 @@ const {
   refresh,
   logout,
   getMe,
+  getMyBankingDetails,
   updateProfile,
   resubmitKyc,
   registerPushToken,
@@ -20,6 +21,7 @@ router.post('/login', authLimiter, login);
 router.post('/refresh', refresh);
 router.post('/logout', protect, logout);
 router.get('/me', protect, getMe);
+router.get('/banking-details', protect, getMyBankingDetails);
 router.patch('/me', protect, updateProfile);
 router.post('/kyc/resubmit', protect, resubmitKyc);
 router.post('/push-token', protect, registerPushToken);

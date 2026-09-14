@@ -44,16 +44,30 @@ const RevenuePage: React.FC = () => {
 
   return (
     <div>
-      <h1 className="font-display font-bold text-2xl mb-1">Revenue</h1>
+      <h1 className="font-display font-bold text-2xl mb-1">Gross Transaction Volume</h1>
       <p className="text-sm text-text-secondary mb-6">
-        Ride fares, order payments, and promotion payments — combined.
+        Ride fares, order payments, and promotion payments — combined. This is the total amount that has
+        changed hands through the app, not what the platform actually keeps — see "Platform Earnings" below.
       </p>
 
+      <div className="bg-brand-green/10 border border-brand-green/40 rounded-xl p-5 mb-8">
+        <div className="text-xs text-text-secondary mb-2">Platform Earnings (all time)</div>
+        <div className="font-display font-bold text-3xl text-brand-green mb-2">
+          R{data.platformEarnings.toLocaleString()}
+        </div>
+        <p className="text-xs text-text-secondary leading-relaxed">
+          The real number: commission withheld from ride/order payouts, plus promotion payments (which are
+          already 100% platform revenue — promoted listings aren't owed back to anyone). Ride and order
+          commission is currently 0% (see backend/src/config/commission.js) — almost the entire gross volume
+          above is owed straight back out to drivers and sellers, not kept by the platform.
+        </p>
+      </div>
+
       <div className="grid grid-cols-4 gap-4 mb-8">
-        <StatCard label="All time" value={data.total} />
-        <StatCard label="Today" value={data.today} />
-        <StatCard label="Last 7 days" value={data.week} />
-        <StatCard label="This month" value={data.month} />
+        <StatCard label="All time (gross)" value={data.total} />
+        <StatCard label="Today (gross)" value={data.today} />
+        <StatCard label="Last 7 days (gross)" value={data.week} />
+        <StatCard label="This month (gross)" value={data.month} />
       </div>
 
       <div className="bg-surface border border-border rounded-xl p-5 mb-8">

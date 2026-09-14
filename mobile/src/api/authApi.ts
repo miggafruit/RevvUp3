@@ -5,6 +5,7 @@ import {
   RegisterPayload,
   User,
   KycDocument,
+  BankingDetails,
   ForgotPasswordPayload,
   ResetPasswordPayload
 } from '../types/auth';
@@ -35,11 +36,21 @@ export interface UpdateProfilePayload {
   isDriver?: boolean;
   roadsideServices?: string[];
   vehicleDetails?: { make: string; model: string; licensePlate: string };
+  bankingDetails?: BankingDetails;
+  profilePhoto?: string;
+  qualifications?: string;
+  portfolioImages?: string[];
+  profileVideoUrl?: string;
 }
 
 export const updateProfile = async (payload: UpdateProfilePayload): Promise<User> => {
   const { data } = await apiClient.patch<{ user: User }>('/auth/me', payload);
   return data.user;
+};
+
+export const getMyBankingDetails = async (): Promise<BankingDetails | null> => {
+  const { data } = await apiClient.get<{ bankingDetails: BankingDetails | null }>('/auth/banking-details');
+  return data.bankingDetails;
 };
 
 export const resubmitKyc = async (kycDocuments: KycDocument[]): Promise<User> => {

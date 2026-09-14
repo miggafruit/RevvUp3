@@ -12,6 +12,8 @@ import {
 } from 'react-native';
 import { showAlert } from '../utils/crossPlatformAlert';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/PlatformMap';
+import MapUnavailableNotice from '../components/MapUnavailableNotice';
+import { hasGoogleMapsKey } from '../utils/mapsConfig';
 
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Location from 'expo-location';
@@ -20,6 +22,7 @@ import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
 import {
   getPendingRequests,
+  setAvailability,
   acceptRequest,
   markArrived,
   completeRequest,
@@ -44,12 +47,14 @@ type RideRequest = {
   };
   serviceType: string;
   location: { address: string; latitude?: number; longitude?: number };
+  destination?: { address: string; latitude?: number; longitude?: number };
   vehicleDetails: { make: string; model: string; licensePlate: string };
   issueDescription: string;
   forSomeoneElse: boolean;
   beneficiaryName?: string;
   status: string;
   createdAt: string;
+  fare?: number;
 };
 
 type DriverMode = 'online' | 'en_route' | 'on_scene' | 'completed';
@@ -93,12 +98,20 @@ export default function EHailingDriverScreen() {
 
   const [routeCoords, setRouteCoords] = useState<{ latitude: number; longitude: number }[]>([]);
 
-  // Real road route between the driver and the job's location — this
-  // has to live at the top level (not inside the map's render branch)
-  // since it feeds a useEffect below, and hooks can't live inside a
-  // conditionally-rendered block.
-  const destCoord = activeRequest?.location.latitude
-    ? { latitude: activeRequest.location.latitude, longitude: activeRequest.location.longitude! }
+  // Real road route between the driver and wherever they need to head next.
+  // For a tow job, once the driver has arrived at the pickup ("on scene"),
+  // the next leg is actually driving the car to the drop-off point — not
+  // the pickup point again. Previously this always targeted `location`
+  // (the pickup), so the driver never saw where they were meant to be
+  // towing the vehicle to, and the map/nav simply stopped being useful
+  // after arrival. This has to live at the top level (not inside the
+  // map's render branch) since it feeds a useEffect below, and hooks
+  // can't live inside a conditionally-rendered block.
+  const isTowingToDestination =
+    mode === 'on_scene' && !!activeRequest?.destination?.latitude;
+  const targetLocation = isTowingToDestination ? activeRequest!.destination! : activeRequest?.location;
+  const destCoord = targetLocation?.latitude
+    ? { latitude: targetLocation.latitude, longitude: targetLocation.longitude! }
     : null;
 
   useEffect(() => {
@@ -139,10 +152,14 @@ export default function EHailingDriverScreen() {
       clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeRequest?.id, destCoord?.latitude, destCoord?.longitude]);
+  }, [activeRequest?.id, mode, destCoord?.latitude, destCoord?.longitude]);
   const [isAccepting, setIsAccepting] = useState(false);
   const [jobsCompleted, setJobsCompleted] = useState(0);
   const [earnings, setEarnings] = useState(0);
+  // Payout for the job that was *just* completed — distinct from `earnings`,
+  // which is the running session total. The "Job Complete" screen should show
+  // what this specific job paid, not the cumulative total for the day.
+  const [lastPayout, setLastPayout] = useState(0);
 
   const locationWatchRef = useRef<Location.LocationSubscription | null>(null);
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -216,20 +233,56 @@ export default function EHailingDriverScreen() {
     onAssignedRequestCancelled: handleAssignedCancelled,
   });
 
-  // ── Fetch pending on mount ───────────────────────────────────────────────
+  // ── Go online + fetch/poll pending jobs ──────────────────────────────────
+  // Previously this only ever fetched once, on mount, and relied on the
+  // socket's "new_request" event for anything after that — but the
+  // driver was never actually marked isOnline server-side (see
+  // setAvailability's own comment), so that socket event could never
+  // reach them either. This now does both halves of the real fix:
+  // actually go online/available server-side so real-time dispatch can
+  // find this driver at all, AND poll on an interval as a safety net
+  // in case a socket event is ever missed (a dropped connection,
+  // reconnecting at the wrong moment, etc.) — matching what the
+  // backend endpoint's own doc comment already described this for
+  // ("fallback for polling / missed socket events") but nothing
+  // actually did until now.
+  const POLL_INTERVAL_MS = 15000;
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    setAvailability(true).catch(() => {
+      // Not fatal — the one-time fetch below and the poll interval
+      // still work regardless; this just means real-time push/socket
+      // dispatch won't find this driver until a retry succeeds.
+    });
+
+    const fetchPending = async () => {
       try {
         const res = await getPendingRequests();
+        if (cancelled) return;
         const fetched: RideRequest[] = res.data ?? [];
-        if (incomingRequest && !fetched.find((r) => r.id === incomingRequest.id)) {
-          setPendingRequests([incomingRequest, ...fetched]);
-        } else {
-          setPendingRequests(fetched);
-        }
+        setPendingRequests((prev) => {
+          if (incomingRequest && !fetched.find((r) => r.id === incomingRequest.id)) {
+            return [incomingRequest, ...fetched];
+          }
+          return fetched;
+        });
       } catch {}
-    })();
+    };
+
+    fetchPending();
+    const pollId = setInterval(fetchPending, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(pollId);
+      // Best-effort — if this fails (app killed, network gone right as
+      // the screen closes), the driver just stays online server-side
+      // until their next session explicitly toggles it, rather than
+      // this cleanup blocking navigation on a network call.
+      setAvailability(false).catch(() => {});
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -333,10 +386,15 @@ export default function EHailingDriverScreen() {
         text: 'Complete',
         onPress: async () => {
           try {
-            await completeRequest(activeRequest!.id);
+            const response = await completeRequest(activeRequest!.id);
+            // Use the fare actually recorded on the ride (set server-side when
+            // it was created/accepted) rather than a hardcoded stand-in amount,
+            // so the driver's payout always matches what the client is charged.
+            const completedFare: number | undefined = response?.data?.fare ?? activeRequest?.fare;
             if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
             setJobsCompleted((n) => n + 1);
-            setEarnings((n) => n + 350);
+            setLastPayout(completedFare ?? 0);
+            setEarnings((n) => n + (completedFare ?? 0));
             setMode('completed');
           } catch {
             showAlert('Error', 'Could not complete job.');
@@ -412,7 +470,7 @@ export default function EHailingDriverScreen() {
         <Text style={styles.subText}>Great work. The client has been sorted.</Text>
         <View style={styles.earningBox}>
           <Text style={styles.earningLabel}>Estimated Payout</Text>
-          <Text style={styles.earningAmount}>R{earnings}</Text>
+          <Text style={styles.earningAmount}>R{lastPayout}</Text>
         </View>
         <TouchableOpacity
           style={styles.greenBtn}
@@ -429,6 +487,7 @@ export default function EHailingDriverScreen() {
   if (mode === 'en_route' || mode === 'on_scene') {
     return (
       <View style={{ flex: 1, backgroundColor: '#0A1628' }}>
+        {hasGoogleMapsKey() ? (
         <MapView
           ref={mapRef}
           provider={PROVIDER_GOOGLE}
@@ -448,8 +507,12 @@ export default function EHailingDriverScreen() {
             </Marker>
           )}
           {destCoord && (
-            <Marker coordinate={destCoord} title="Client">
-              <MaterialCommunityIcons name="map-marker" size={38} color="#F97316" />
+            <Marker coordinate={destCoord} title={isTowingToDestination ? 'Drop-off' : 'Client'}>
+              <MaterialCommunityIcons
+                name={isTowingToDestination ? 'flag-checkered' : 'map-marker'}
+                size={38}
+                color="#F97316"
+              />
             </Marker>
           )}
           {driverLocation && destCoord && (
@@ -461,18 +524,44 @@ export default function EHailingDriverScreen() {
             />
           )}
         </MapView>
+        ) : (
+          <MapUnavailableNotice
+            subtitle={
+              isTowingToDestination
+                ? activeRequest?.destination?.address
+                : activeRequest?.location.address
+            }
+          />
+        )}
 
         <View style={styles.activeJobCard}>
           <Text style={styles.activeJobTitle}>
-            {mode === 'on_scene' ? "You've arrived 🎉" : 'En Route'}
+            {isTowingToDestination
+              ? 'Towing to drop-off'
+              : mode === 'on_scene'
+                ? "You've arrived 🎉"
+                : 'En Route'}
           </Text>
 
           <View style={styles.infoRow}>
             <MaterialCommunityIcons name="map-marker" size={18} color="#F97316" />
             <Text style={styles.activeJobAddress} numberOfLines={2}>
-              {activeRequest?.location.address}
+              {isTowingToDestination
+                ? activeRequest?.destination?.address ?? activeRequest?.location.address
+                : activeRequest?.location.address}
             </Text>
           </View>
+          {/* For a tow job, always show both legs so the driver knows where
+              the car is coming from and going to, not just whichever one is
+              currently the nav target. */}
+          {!!activeRequest?.destination?.address && !isTowingToDestination && (
+            <View style={styles.infoRow}>
+              <MaterialCommunityIcons name="flag-checkered" size={18} color="#9CA3AF" />
+              <Text style={styles.infoText} numberOfLines={2}>
+                Towing to: {activeRequest.destination.address}
+              </Text>
+            </View>
+          )}
           <View style={styles.infoRow}>
             <Feather name="user" size={16} color="#9CA3AF" />
             <Text style={styles.infoText}>
@@ -486,6 +575,14 @@ export default function EHailingDriverScreen() {
               · {activeRequest?.vehicleDetails?.licensePlate}
             </Text>
           </View>
+          {activeRequest?.fare != null && (
+            <View style={styles.infoRow}>
+              <MaterialCommunityIcons name="cash" size={16} color="#22c55e" />
+              <Text style={[styles.infoText, { color: '#22c55e', fontWeight: '700' }]}>
+                You'll be paid R{activeRequest.fare}
+              </Text>
+            </View>
+          )}
 
           {mode === 'en_route' ? (
             <TouchableOpacity style={styles.arrivedBtn} onPress={handleArrived} activeOpacity={0.85}>

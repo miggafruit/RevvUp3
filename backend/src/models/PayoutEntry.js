@@ -21,6 +21,12 @@ const payoutEntrySchema = new mongoose.Schema(
       required: true,
       min: 0
     },
+    // Only set when a commission was actually deducted (see
+    // config/commission.js) — lets the ledger show its work: amount +
+    // platformCut should always reconcile back to the original gross
+    // fare/order total.
+    grossAmount: { type: Number },
+    platformCut: { type: Number },
     // What generated this entry — lets an admin trace a payout back to
     // the actual ride/order it came from, not just a bare number.
     sourceType: {

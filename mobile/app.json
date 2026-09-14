@@ -17,7 +17,8 @@
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.oneil23.mobile"
+      "package": "com.oneil23.mobile",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,6 +36,13 @@
         {
           "icon": "./assets/icon.png",
           "color": "#F97316"
+        }
+      ],
+      [
+        "@sentry/react-native/expo",
+        {
+          "organization": "YOUR_SENTRY_ORG",
+          "project": "YOUR_SENTRY_PROJECT"
         }
       ]
     ],

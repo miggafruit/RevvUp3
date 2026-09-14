@@ -1,6 +1,7 @@
 const Promotion = require('../models/Promotion');
 const PROMOTION_TIERS = require('../config/promotionTiers');
 const { verifyPaystackTransaction } = require('../utils/paystack');
+const { reportSilentFailure } = require('../utils/reportSilentFailure');
 const { buildSearchRegex } = require('../utils/searchHelpers');
 
 // @route   POST /api/promotions
@@ -64,6 +65,10 @@ const payPromotion = async (req, res, next) => {
       verification = await verifyPaystackTransaction(paymentReference);
     } catch (verifyError) {
       console.error('Paystack verification request failed:', verifyError?.response?.data || verifyError.message);
+      reportSilentFailure(verifyError, 'paystack-verification', {
+        promotionId: promotion._id.toString(),
+        paymentReference
+      });
       return res.status(402).json({ message: 'Could not verify payment. Please try again.' });
     }
 

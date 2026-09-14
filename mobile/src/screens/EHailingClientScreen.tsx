@@ -11,6 +11,8 @@ import {
   StyleSheet,
   Animated,
   Vibration,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import SelectModal, { SelectOption } from '../components/SelectModal';
 import { showAlert } from '../utils/crossPlatformAlert';
@@ -19,6 +21,8 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/PlatformMap';
+import MapUnavailableNotice from '../components/MapUnavailableNotice';
+import { hasGoogleMapsKey } from '../utils/mapsConfig';
 import * as Location from 'expo-location';
 import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
@@ -653,6 +657,7 @@ export default function EHailingClientScreen() {
     const driver = acceptedRequest?.driver;
     return (
       <View style={{ flex: 1, backgroundColor: '#0F1B2C' }}>
+        {hasGoogleMapsKey() ? (
         <MapView
           ref={mapRef}
           provider={PROVIDER_GOOGLE}
@@ -691,6 +696,9 @@ export default function EHailingClientScreen() {
             />
           )}
         </MapView>
+        ) : (
+          <MapUnavailableNotice subtitle={acceptedRequest?.location.address} />
+        )}
 
         <View style={styles.driverCard}>
           {status === 'in_progress' ? (
@@ -768,7 +776,16 @@ export default function EHailingClientScreen() {
   // ── Booking form ────────────────────────────────────────────────────────────
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 60 }}>
+    <KeyboardAvoidingView
+      style={{ flex: 1 }}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 60 : 0}
+    >
+      <ScrollView
+        style={styles.container}
+        contentContainerStyle={{ paddingBottom: 60 }}
+        keyboardShouldPersistTaps="handled"
+      >
       <TouchableOpacity onPress={() => navigation.goBack()} style={styles.topBackButton}>
         <Text style={styles.topBackArrow}>← Back</Text>
       </TouchableOpacity>
@@ -782,6 +799,7 @@ export default function EHailingClientScreen() {
       </View>
 
       {userLocation && (
+        hasGoogleMapsKey() ? (
         <MapView
           provider={PROVIDER_GOOGLE}
           googleMapsApiKey={process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY as any}
@@ -791,6 +809,11 @@ export default function EHailingClientScreen() {
         >
           <Marker coordinate={userLocation} pinColor="#F97316" title="You are here" />
         </MapView>
+        ) : (
+          <View style={[styles.map, { overflow: 'hidden' }]}>
+            <MapUnavailableNotice />
+          </View>
+        )
       )}
 
       <View style={styles.card}>
@@ -1049,7 +1072,8 @@ export default function EHailingClientScreen() {
           )}
         </TouchableOpacity>
       </View>
-    </ScrollView>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }
 

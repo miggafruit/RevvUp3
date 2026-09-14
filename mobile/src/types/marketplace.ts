@@ -46,9 +46,13 @@ export interface ShopListing {
   businessName: string;
   businessAddress: string;
   category?: string;
-  productCount: number;
-  rating: number | null;
-  thumbnail: string | null;
+  profilePhoto?: string;
+  qualifications?: string;
+  portfolioImages?: string[];
+  profileVideoUrl?: string;
+  productCount?: number;
+  rating?: number | null;
+  thumbnail?: string | null;
 }
 
 export interface ProviderListing {
@@ -57,9 +61,13 @@ export interface ProviderListing {
   businessName: string;
   businessAddress: string;
   category?: string;
-  serviceCount: number;
-  rating: number | null;
-  thumbnail: string | null;
+  profilePhoto?: string;
+  qualifications?: string;
+  portfolioImages?: string[];
+  profileVideoUrl?: string;
+  serviceCount?: number;
+  rating?: number | null;
+  thumbnail?: string | null;
 }
 
 export interface CartItem {

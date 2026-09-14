@@ -31,6 +31,10 @@ export interface User {
   businessName?: string;
   businessAddress?: string;
   category?: string;
+  profilePhoto?: string;
+  qualifications?: string;
+  portfolioImages?: string[];
+  profileVideoUrl?: string;
   isDriver?: boolean;
   roadsideServices?: string[];
   vehicleDetails?: VehicleDetails;
@@ -38,6 +42,7 @@ export interface User {
   kycStatus?: KycStatus;
   kycReviewNote?: string;
   kycDocumentCount?: number;
+  bankingDetailsSubmitted?: boolean;
   createdAt: string;
 }
 
@@ -45,6 +50,14 @@ export interface AuthResponse {
   user: User;
   accessToken: string;
   refreshToken: string;
+}
+
+export interface BankingDetails {
+  accountHolder?: string;
+  bankName?: string;
+  accountNumber?: string;
+  branchCode?: string;
+  accountType?: string;
 }
 
 export interface RegisterPayload {
@@ -61,6 +74,7 @@ export interface RegisterPayload {
   isDriver?: boolean;
   roadsideServices?: string[];
   vehicleDetails?: VehicleDetails;
+  bankingDetails?: BankingDetails;
 }
 
 export interface LoginPayload {

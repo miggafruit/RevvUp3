@@ -18,6 +18,7 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { getProducts } from '../api/productApi';
+import { createInquiry } from '../api/inquiryApi';
 import { Product } from '../types/marketplace';
 import ProductCard from '../components/ProductCard';
 import { useCart } from '../context/CartContext';
@@ -43,6 +44,7 @@ const ProductsBrowseScreen: React.FC<Props> = ({ navigation, route }) => {
   // ⭐ INQUIRY FORM STATE
   const [formOpen, setFormOpen] = useState(false);
   const [submitted, setSubmitted] = useState(false);
+  const [isSubmittingInquiry, setIsSubmittingInquiry] = useState(false);
   const [formData, setFormData] = useState({
     vehicleMake: '',
     vehicleModel: '',
@@ -128,13 +130,42 @@ const ProductsBrowseScreen: React.FC<Props> = ({ navigation, route }) => {
   };
 
   // ⭐ INQUIRY FORM HANDLERS
-  const handleSubmitInquiry = () => {
+  const handleSubmitInquiry = async () => {
     const { vehicleMake, vehicleModel, vehicleYear, partName, quantity } = formData;
     if (!vehicleMake || !vehicleModel || !vehicleYear || !partName || !quantity) {
       showAlert('Missing Fields', 'Please fill in all required fields.');
       return;
     }
-    setSubmitted(true);
+    if (!shopId) {
+      // Shouldn't be reachable — the chat button is only shown when a
+      // shop is known — but guarding here too rather than silently
+      // "succeeding" with nowhere for the inquiry to actually go.
+      showAlert('No Shop Selected', 'Please open this from a specific shop to send an inquiry.');
+      return;
+    }
+
+    setIsSubmittingInquiry(true);
+    try {
+      // This used to just flip local state (setSubmitted(true)) with no
+      // API call at all — nothing was ever actually sent, so the shop
+      // never received it. Now it's a real request the shop gets
+      // notified about.
+      await createInquiry({
+        shop: shopId,
+        vehicleMake,
+        vehicleModel,
+        vehicleYear,
+        partName,
+        quantity,
+        additionalDetails: formData.additionalDetails || undefined
+      });
+      setSubmitted(true);
+    } catch (error: any) {
+      const message = error?.response?.data?.message || "Couldn't send your inquiry. Please try again.";
+      showAlert('Inquiry Failed', message);
+    } finally {
+      setIsSubmittingInquiry(false);
+    }
   };
 
   const resetForm = () => {
@@ -200,19 +231,28 @@ const ProductsBrowseScreen: React.FC<Props> = ({ navigation, route }) => {
             />
           </View>
 
-          {/* ⭐ INQUIRY BUTTON */}
-          <TouchableOpacity style={styles.chatBtn} onPress={() => setFormOpen(true)}>
-            <Text style={{ fontSize: 16 }}>💬</Text>
-          </TouchableOpacity>
+          {/* ⭐ INQUIRY BUTTON — only shown when we know which shop to
+              send it to; otherwise there's nowhere for it to actually go. */}
+          {!!shopId && (
+            <TouchableOpacity style={styles.chatBtn} onPress={() => setFormOpen(true)}>
+              <Text style={{ fontSize: 16 }}>💬</Text>
+            </TouchableOpacity>
+          )}
         </View>
 
         {/* ⭐ BANNER */}
         <View style={styles.banner}>
           <View style={{ flex: 1 }}>
             <Text style={styles.bannerTitle}>Autoparts in{'\n'}unique style</Text>
-            <TouchableOpacity style={styles.orderBtn}>
-              <Text style={styles.orderBtnText}>Order now</Text>
-            </TouchableOpacity>
+            {/* This used to be a TouchableOpacity with no onPress at
+                all — a button that looked tappable but did nothing.
+                Since this banner already sits on the product browse
+                page, there's no separate "order" destination to send
+                it to; rendering it as plain (non-interactive) text is
+                honest about that instead of faking a tap target. */}
+            <View style={styles.orderBtn}>
+              <Text style={styles.orderBtnText}>Shop below ↓</Text>
+            </View>
           </View>
           <Image
             source={{
@@ -360,8 +400,16 @@ const ProductsBrowseScreen: React.FC<Props> = ({ navigation, route }) => {
                   onChangeText={(val) => setFormData({ ...formData, additionalDetails: val })}
                 />
 
-                <TouchableOpacity style={styles.submitBtn} onPress={handleSubmitInquiry}>
-                  <Text style={styles.submitBtnText}>Submit Inquiry</Text>
+                <TouchableOpacity
+                  style={[styles.submitBtn, isSubmittingInquiry && { opacity: 0.6 }]}
+                  onPress={handleSubmitInquiry}
+                  disabled={isSubmittingInquiry}
+                >
+                  {isSubmittingInquiry ? (
+                    <ActivityIndicator color={colors.white} />
+                  ) : (
+                    <Text style={styles.submitBtnText}>Submit Inquiry</Text>
+                  )}
                 </TouchableOpacity>
               </ScrollView>
             )}

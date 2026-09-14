@@ -4,6 +4,7 @@ const router = express.Router();
 const {
   createRequest,
   getTowEstimate,
+  setAvailability,
   getPendingRequests,
   acceptRequest,
   updateDriverLocation,
@@ -14,6 +15,7 @@ const {
   getHistory,
   payRide,
   payCash,
+  confirmCashReceived,
 } = require("../controllers/ehailingController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -35,10 +37,12 @@ router.post("/request/:id/pay-cash", payCash);                    // Client mark
 router.get("/history", getHistory);                              // Past requests (client or driver)
 
 // DRIVER routes
+router.patch("/availability", setAvailability);                  // Go online/offline — see controller comment
 router.get("/requests/pending", getPendingRequests);             // List open jobs
 router.post("/request/:id/accept", acceptRequest);                // Driver accepts
 router.post("/request/:id/location", updateDriverLocation);       // Driver broadcasts location
 router.post("/request/:id/arrived", markArrived);                 // Driver marks arrived
 router.post("/request/:id/complete", completeRequest);            // Driver completes job
+router.post("/request/:id/confirm-cash", confirmCashReceived);     // Driver confirms/disputes cash receipt
 
 module.exports = router;

@@ -1,4 +1,5 @@
 const Product = require('../models/Product');
+const User = require('../models/User');
 const mongoose = require('mongoose');
 
 // @route   POST /api/products
@@ -93,12 +94,29 @@ const getProducts = async (req, res, next) => {
     if (category && category !== 'All') {
       query.category = category;
     }
+
+    // Products only surface here once the shop selling them has passed
+    // KYC — otherwise an unverified shop's listings were fully public
+    // and browsable/purchasable the moment they were created, with no
+    // verification step ever actually gating anything a client sees.
+    const verifiedShopIds = await User.find({ role: 'shop', kycStatus: 'approved' }).distinct('_id');
+
     if (shop) {
       if (!mongoose.Types.ObjectId.isValid(shop)) {
         return res.status(400).json({ message: 'Invalid shop id' });
       }
+      const isVerifiedShop = verifiedShopIds.some((id) => id.toString() === shop);
+      if (!isVerifiedShop) {
+        return res.status(200).json({
+          products: [],
+          pagination: { page: 1, limit: Number(limit) || 20, total: 0, pages: 0 }
+        });
+      }
       query.shop = shop;
+    } else {
+      query.shop = { $in: verifiedShopIds };
     }
+
     if (search) {
       query.$text = { $search: search };
     }
@@ -131,10 +149,10 @@ const getProductById = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id).populate(
       'shop',
-      'businessName businessAddress phone'
+      'businessName businessAddress phone kycStatus'
     );
 
-    if (!product || !product.isActive) {
+    if (!product || !product.isActive || product.shop?.kycStatus !== 'approved') {
       return res.status(404).json({ message: 'Product not found' });
     }
 

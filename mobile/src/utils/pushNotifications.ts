@@ -114,6 +114,30 @@ function handleNotificationTap(data: any) {
     case 'kyc_reviewed':
       navigate('KycStatus');
       break;
+    case 'new_order':
+    case 'order_paid':
+      // Seller-facing — a client placed or paid for an order with them.
+      navigate('IncomingOrders');
+      break;
+    case 'order_status_changed':
+      // Client-facing — their own order was accepted/declined/completed.
+      navigate('Orders');
+      break;
+    case 'cash_payment_reported':
+      // Driver-facing — a client says they paid cash; confirm it in history.
+      navigate('EHailingHistory');
+      break;
+    case 'new_inquiry':
+      // Shop-facing — a client asked about a part.
+      navigate('PartInquiries');
+      break;
+    case 'inquiry_responded':
+      // Client-facing — a shop replied to their inquiry.
+      navigate('MyInquiries');
+      break;
+    case 'password_reset':
+      // Nothing to navigate to — this is just an FYI/security alert.
+      break;
     default:
       break;
   }

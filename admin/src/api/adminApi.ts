@@ -7,7 +7,9 @@ import {
   UserDetail,
   RideListItem,
   OrderListItem,
-  Pagination
+  Pagination,
+  PayoutSummaryItem,
+  PayoutDetail
 } from '../types/admin';
 
 export const getOverview = async (): Promise<Overview> => {
@@ -80,4 +82,19 @@ export const getOrders = async (params: {
 export const getOrderDetail = async (id: string): Promise<OrderListItem> => {
   const { data } = await apiClient.get(`/admin/orders/${id}`);
   return data.order;
+};
+
+export const getPayoutSummary = async (): Promise<PayoutSummaryItem[]> => {
+  const { data } = await apiClient.get<{ payouts: PayoutSummaryItem[] }>('/admin/payouts');
+  return data.payouts;
+};
+
+export const getPayoutDetail = async (recipientId: string): Promise<PayoutDetail> => {
+  const { data } = await apiClient.get<PayoutDetail>(`/admin/payouts/${recipientId}`);
+  return data;
+};
+
+export const markPayoutsPaid = async (recipientId: string, note?: string): Promise<{ updatedCount: number }> => {
+  const { data } = await apiClient.patch(`/admin/payouts/${recipientId}/mark-paid`, { note });
+  return data;
 };

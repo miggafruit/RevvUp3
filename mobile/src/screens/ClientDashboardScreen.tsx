@@ -59,6 +59,12 @@ const ClientDashboardScreen: React.FC<Props> = ({ navigation }) => {
       desc: 'View current promotions',
       screen: 'Promotions',
     },
+    {
+      icon: () => <Feather name="message-circle" size={22} color={colors.accent} />,
+      title: 'My Inquiries',
+      desc: 'See replies from shops',
+      screen: 'MyInquiries',
+    },
   ];
 
   const firstName = user?.name?.split(' ')[0] ?? 'there';

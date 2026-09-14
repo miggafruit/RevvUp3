@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Image, ScrollView, Linking } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import * as promotionApi from '../api/promotionApi';
+import * as businessApi from '../api/businessApi';
+import { ProviderListing } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProviderDetail'>;
@@ -10,12 +12,17 @@ type Props = NativeStackScreenProps<RootStackParamList, 'ProviderDetail'>;
 const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { providerId, providerName } = route.params;
   const [hasPromotion, setHasPromotion] = useState(false);
+  const [provider, setProvider] = useState<ProviderListing | null>(null);
 
   useEffect(() => {
     promotionApi
       .getActiveSellerIds()
       .then((ids) => setHasPromotion(ids.includes(providerId)))
       .catch((error) => console.warn('Failed to load promotion indicator', error));
+    businessApi
+      .getProviderById(providerId)
+      .then(setProvider)
+      .catch((error) => console.warn('Failed to load provider profile', error));
   }, [providerId]);
 
   return (
@@ -28,11 +35,15 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         <View style={{ width: 24 }} />
       </View>
 
-      <View style={styles.body}>
+      <ScrollView contentContainerStyle={styles.body}>
         <View style={styles.avatarWrap}>
-          <View style={styles.avatarCircle}>
-            <Text style={styles.avatarText}>{providerName.charAt(0)}</Text>
-          </View>
+          {provider?.profilePhoto ? (
+            <Image source={{ uri: provider.profilePhoto }} style={styles.avatarPhoto} />
+          ) : (
+            <View style={styles.avatarCircle}>
+              <Text style={styles.avatarText}>{providerName.charAt(0)}</Text>
+            </View>
+          )}
           {hasPromotion && <View style={styles.promoDot} />}
         </View>
         <Text style={styles.providerName}>{providerName}</Text>
@@ -44,13 +55,37 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         )}
         <Text style={styles.providerSubtitle}>Browse all services from this provider</Text>
 
+        {!!provider?.qualifications && (
+          <View style={styles.qualificationsBox}>
+            <Text style={styles.qualificationsTitle}>Qualifications & Experience</Text>
+            <Text style={styles.qualificationsText}>{provider.qualifications}</Text>
+          </View>
+        )}
+
+        {!!provider?.profileVideoUrl && (
+          <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(provider.profileVideoUrl!)}>
+            <Text style={styles.videoLinkText}>▶ Watch video</Text>
+          </TouchableOpacity>
+        )}
+
+        {!!provider?.portfolioImages?.length && (
+          <View style={styles.portfolioSection}>
+            <Text style={styles.qualificationsTitle}>Portfolio</Text>
+            <View style={styles.portfolioGrid}>
+              {provider.portfolioImages.map((img, i) => (
+                <Image key={i} source={{ uri: img }} style={styles.portfolioThumb} />
+              ))}
+            </View>
+          </View>
+        )}
+
         <TouchableOpacity
           style={styles.cta}
           onPress={() => navigation.navigate('ServicesBrowse', { providerId, providerName })}
         >
           <Text style={styles.ctaText}>View Services</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
@@ -67,7 +102,7 @@ const styles = StyleSheet.create({
   },
   backArrow: { color: colors.textPrimary, fontSize: 20 },
   headerTitle: { ...typography.cardTitle, fontSize: 17, color: colors.textPrimary },
-  body: { flex: 1, alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xl },
+  body: { flexGrow: 1, alignItems: 'center', paddingTop: spacing.xxl, paddingHorizontal: spacing.xl, paddingBottom: spacing.xxl },
   avatarWrap: { position: 'relative', marginBottom: spacing.lg },
   avatarCircle: {
     width: 88,
@@ -80,6 +115,23 @@ const styles = StyleSheet.create({
     justifyContent: 'center'
   },
   avatarText: { fontSize: 32, fontWeight: '800', color: colors.accent },
+  avatarPhoto: { width: 88, height: 88, borderRadius: 44 },
+  qualificationsBox: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.md
+  },
+  qualificationsTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 13, marginBottom: 6 },
+  qualificationsText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+  videoLink: { marginBottom: spacing.md },
+  videoLinkText: { color: colors.accent, fontWeight: '700', fontSize: 13.5 },
+  portfolioSection: { width: '100%', marginBottom: spacing.lg },
+  portfolioGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  portfolioThumb: { width: 72, height: 72, borderRadius: 10 },
   promoDot: {
     position: 'absolute',
     bottom: 2,

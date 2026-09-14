@@ -18,7 +18,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import WaiverModal from '../components/WaiverModal';
 import KycUploader from '../components/KycUploader';
-import { RegisterPayload, UserRole, KycDocument } from '../types/auth';
+import PasswordInput from '../components/PasswordInput';
+import { RegisterPayload, UserRole, KycDocument, BankingDetails } from '../types/auth';
 import { ROADSIDE_SERVICE_OPTIONS } from '../constants/roadsideServices';
 import { colors } from '../theme/colors';
 
@@ -48,6 +49,10 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
   const [businessAddress, setBusinessAddress] = useState('');
   const [category, setCategory] = useState('');
   const [kycDocuments, setKycDocuments] = useState<KycDocument[]>([]);
+  const [bankAccountHolder, setBankAccountHolder] = useState('');
+  const [bankName, setBankName] = useState('');
+  const [bankAccountNumber, setBankAccountNumber] = useState('');
+  const [bankBranchCode, setBankBranchCode] = useState('');
 
   // Optional — a service_provider isn't required to also deliver or do
   // roadside work, this is purely additive to whatever their main
@@ -123,7 +128,17 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
               : {})
           }
         : {}),
-      ...(isBusiness && kycDocuments.length > 0 ? { kycDocuments } : {})
+      ...(isBusiness && kycDocuments.length > 0 ? { kycDocuments } : {}),
+      ...(isBusiness && (bankAccountHolder.trim() || bankName.trim() || bankAccountNumber.trim() || bankBranchCode.trim())
+        ? {
+            bankingDetails: {
+              accountHolder: bankAccountHolder.trim() || undefined,
+              bankName: bankName.trim() || undefined,
+              accountNumber: bankAccountNumber.trim() || undefined,
+              branchCode: bankBranchCode.trim() || undefined
+            } as BankingDetails
+          }
+        : {})
     };
 
     setIsSubmitting(true);
@@ -276,6 +291,11 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                         placeholder="License plate"
                         autoCapitalize="characters"
                       />
+                      <Text style={styles.approvalNote}>
+                        ⓘ You can register now, but you won't be dispatched any delivery or roadside/towing
+                        jobs until an admin reviews your ID and vehicle documents below and approves your
+                        account.
+                      </Text>
                     </>
                   )}
                 </>
@@ -284,21 +304,23 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
           )}
 
           <Text style={styles.label}>Password</Text>
-          <TextInput placeholderTextColor={colors.textMuted}
-            style={styles.input}
+          <PasswordInput
+            containerStyle={styles.input}
+            inputStyle={{ color: colors.textPrimary, fontSize: 15 }}
+            placeholderTextColor={colors.textMuted}
             value={password}
             onChangeText={setPassword}
             placeholder="At least 6 characters"
-            secureTextEntry
           />
 
           <Text style={styles.label}>Confirm Password</Text>
-          <TextInput placeholderTextColor={colors.textMuted}
-            style={styles.input}
+          <PasswordInput
+            containerStyle={styles.input}
+            inputStyle={{ color: colors.textPrimary, fontSize: 15 }}
+            placeholderTextColor={colors.textMuted}
             value={confirmPassword}
             onChangeText={setConfirmPassword}
             placeholder="Re-enter password"
-            secureTextEntry
           />
 
           {isBusiness && (
@@ -315,6 +337,42 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                 role={role as 'shop' | 'service_provider'}
                 documents={kycDocuments}
                 onChange={setKycDocuments}
+                showVehicleDocument={canOfferDispatchWork && offersDispatchWork}
+              />
+
+              <Text style={[styles.label, { marginTop: 24 }]}>
+                Banking Details <Text style={styles.optional}>(optional — required before approval)</Text>
+              </Text>
+              <Text style={styles.kycNote}>
+                This is where your payouts get sent. You can add it now or later from your profile, but your
+                account can't be approved without it.
+              </Text>
+
+              <TextInput placeholderTextColor={colors.textMuted}
+                style={styles.input}
+                value={bankAccountHolder}
+                onChangeText={setBankAccountHolder}
+                placeholder="Account holder name"
+              />
+              <TextInput placeholderTextColor={colors.textMuted}
+                style={[styles.input, { marginTop: 10 }]}
+                value={bankName}
+                onChangeText={setBankName}
+                placeholder="Bank name"
+              />
+              <TextInput placeholderTextColor={colors.textMuted}
+                style={[styles.input, { marginTop: 10 }]}
+                value={bankAccountNumber}
+                onChangeText={setBankAccountNumber}
+                placeholder="Account number"
+                keyboardType="number-pad"
+              />
+              <TextInput placeholderTextColor={colors.textMuted}
+                style={[styles.input, { marginTop: 10 }]}
+                value={bankBranchCode}
+                onChangeText={setBankBranchCode}
+                placeholder="Branch code"
+                keyboardType="number-pad"
               />
             </>
           )}
@@ -391,6 +449,12 @@ const styles = StyleSheet.create({
     color: colors.textMuted,
     marginBottom: 12,
     lineHeight: 18
+  },
+  approvalNote: {
+    fontSize: 12,
+    color: colors.accent,
+    marginTop: 10,
+    lineHeight: 17
   },
   switchRow: {
     flexDirection: 'row',
