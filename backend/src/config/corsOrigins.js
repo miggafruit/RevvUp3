@@ -29,7 +29,7 @@ if (isProduction && configuredOrigins.length === 0) {
   console.warn('⚠️  CORS_ALLOWED_ORIGINS is not set in production — falling back to');
   console.warn('   allowing all origins. Set it to your admin dashboard and web app URLs,');
   console.warn('   comma-separated, e.g.:');
-  console.warn('   CORS_ALLOWED_ORIGINS=https://admin.revvup.co.za,https://app.example.com');
+  console.warn('   CORS_ALLOWED_ORIGINS=https://admin.example.com,https://app.example.com');
   console.warn('');
 }
 

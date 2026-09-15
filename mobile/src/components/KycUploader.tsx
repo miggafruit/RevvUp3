@@ -27,7 +27,7 @@ const SERVICE_PROVIDER_SLOTS: Array<{ type: KycDocument['type']; label: string; 
   { type: 'id_document', label: 'ID / Passport', hint: 'A clear photo of your ID or passport' },
   { type: 'drivers_license', label: "Driver's License", hint: "Needed if you'll be doing roadside assistance or deliveries" },
   { type: 'proof_of_address', label: 'Proof of Address', hint: 'A recent utility bill or bank statement' },
-  { type: 'selfie', label: 'Selfie', hint: 'A clear photo of your face, for identity verification' }
+  { type: 'selfie', label: 'Upload Selfie', hint: 'A clear photo of your face, for identity verification' }
 ];
 
 const VEHICLE_DOCUMENT_SLOT: { type: KycDocument['type']; label: string; hint: string } = {
@@ -83,6 +83,20 @@ const pickFromCamera = async (): Promise<string | null> => {
  * existing photo.
  */
 const pickImage = async (preferCamera: boolean): Promise<string | null> => {
+  // react-native-web's Alert.alert is a total no-op stub (`static
+  // alert() {}` — literally does nothing, calls no callback, ever).
+  // On web this meant the promise below never resolved and tapping
+  // "+Add" silently did nothing at all, forever — not a permission
+  // issue, not a build-config issue, the button just had no way to
+  // ever complete. Skipping straight to the gallery/file picker on
+  // web avoids relying on Alert entirely; mobile browsers still
+  // surface a native "Camera" option inside that file picker's own
+  // OS-level chooser, so camera capture isn't actually lost, just not
+  // offered through our own custom action sheet.
+  if (Platform.OS === 'web') {
+    return pickFromGallery();
+  }
+
   return new Promise((resolve) => {
     const options = preferCamera ? ['Take Photo', 'Choose from Gallery', 'Cancel'] : ['Choose from Gallery', 'Take Photo', 'Cancel'];
     const cancelButtonIndex = 2;

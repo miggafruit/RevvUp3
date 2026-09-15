@@ -39,6 +39,13 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "RevvUp needs access to your photo library so you can upload documents, a profile photo, and portfolio images.",
+          "cameraPermission": "RevvUp needs access to your camera so you can take a selfie or photograph documents directly."
+        }
+      ],
+      [
         "@sentry/react-native/expo",
         {
           "organization": "YOUR_SENTRY_ORG",
