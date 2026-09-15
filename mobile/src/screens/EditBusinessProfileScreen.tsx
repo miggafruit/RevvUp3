@@ -51,6 +51,37 @@ const pickImage = async (): Promise<string | null> => {
 // image does.
 const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
   const { user, setUser } = useAuth();
+  const isShop = user?.role === 'shop';
+
+  // Previously this screen used identical copy regardless of role —
+  // "Qualifications & Experience" and "Portfolio Images" make sense
+  // for a mechanic/service provider, but read oddly for a shop, which
+  // wants to describe its business and show storefront/product photos
+  // instead of "past work." The client-facing display screens
+  // (ShopDetailScreen/ProviderDetailScreen) already made this
+  // distinction — this brings the edit screen in line with what
+  // clients actually see.
+  const copy = isShop
+    ? {
+        title: 'Edit Shop Profile',
+        photoLabel: 'Shop Photo',
+        photoHint: 'Add a shop photo',
+        aboutTitle: 'About This Shop',
+        aboutHelper: 'What you sell, your specialties, years in business — whatever helps clients trust you.',
+        aboutPlaceholder: "e.g. Supplying genuine and aftermarket parts since 2015, specializing in German and Japanese vehicles...",
+        galleryTitle: 'Shop & Product Photos',
+        galleryHelper: `Photos of your shop, storefront, or featured products — up to ${MAX_PORTFOLIO_IMAGES}.`,
+      }
+    : {
+        title: 'Edit Profile',
+        photoLabel: 'Profile Photo',
+        photoHint: 'Add a photo',
+        aboutTitle: 'Qualifications & Experience',
+        aboutHelper: 'Certifications, years of experience, specialties — whatever helps clients trust you.',
+        aboutPlaceholder: 'e.g. 10 years as a certified mechanic, specializing in German vehicles...',
+        galleryTitle: 'Portfolio Images',
+        galleryHelper: `Photos of past work — up to ${MAX_PORTFOLIO_IMAGES}.`,
+      };
 
   const [profilePhoto, setProfilePhoto] = useState<string | undefined>(user?.profilePhoto);
   const [qualifications, setQualifications] = useState(user?.qualifications || '');
@@ -112,12 +143,12 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()}>
           <Text style={styles.backArrow}>←</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Edit Profile</Text>
+        <Text style={styles.headerTitle}>{copy.title}</Text>
         <View style={{ width: 24 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.sectionTitle}>Profile Photo</Text>
+        <Text style={styles.sectionTitle}>{copy.photoLabel}</Text>
         <TouchableOpacity style={styles.photoPicker} onPress={handlePickProfilePhoto} disabled={isPickingPhoto}>
           {isPickingPhoto ? (
             <ActivityIndicator color={colors.accent} />
@@ -126,18 +157,18 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
           ) : (
             <>
               <MaterialCommunityIcons name="camera-plus-outline" size={28} color={colors.accent} />
-              <Text style={styles.photoPickerText}>Add a photo</Text>
+              <Text style={styles.photoPickerText}>{copy.photoHint}</Text>
             </>
           )}
         </TouchableOpacity>
 
-        <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Qualifications & Experience</Text>
-        <Text style={styles.helperText}>Certifications, years of experience, specialties — whatever helps clients trust you.</Text>
+        <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>{copy.aboutTitle}</Text>
+        <Text style={styles.helperText}>{copy.aboutHelper}</Text>
         <TextInput
           style={[styles.input, styles.textArea]}
           value={qualifications}
           onChangeText={setQualifications}
-          placeholder="e.g. 10 years as a certified mechanic, specializing in German vehicles..."
+          placeholder={copy.aboutPlaceholder}
           placeholderTextColor={colors.textMuted}
           multiline
           numberOfLines={5}
@@ -156,8 +187,8 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
           keyboardType="url"
         />
 
-        <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Portfolio Images</Text>
-        <Text style={styles.helperText}>Photos of past work — up to {MAX_PORTFOLIO_IMAGES}.</Text>
+        <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>{copy.galleryTitle}</Text>
+        <Text style={styles.helperText}>{copy.galleryHelper}</Text>
         <View style={styles.portfolioGrid}>
           {portfolioImages.map((img, i) => (
             <View key={i} style={styles.portfolioThumbWrap}>
