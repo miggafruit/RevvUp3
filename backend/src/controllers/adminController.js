@@ -300,9 +300,9 @@ const adminCancelRide = async (req, res, next) => {
     const io = req.app.get('io');
     const clientId = clientRoomId(ride);
     if (io) {
-      io.to(`client_${clientId}`).emit('assigned_request_cancelled', { request_id: ride._id.toString() });
+      io.to(`client_${clientId}`).emit('assigned_request_cancelled', { request_id: ride._id.toString(), cancelledBy: 'admin' });
       if (ride.driver?.driver_id) {
-        io.to(`driver_${ride.driver.driver_id}`).emit('assigned_request_cancelled', { request_id: ride._id.toString() });
+        io.to(`driver_${ride.driver.driver_id}`).emit('assigned_request_cancelled', { request_id: ride._id.toString(), cancelledBy: 'admin' });
       }
     }
     sendPushNotifications([ride.client], {

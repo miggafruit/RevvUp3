@@ -86,9 +86,12 @@ export async function syncPushTokenWithBackend(): Promise<void> {
  * Navigates based on a notification's data payload — same routes a
  * user would reach manually, just triggered by tapping a notification
  * instead. Unrecognized/missing data types are ignored rather than
- * guessed at.
+ * guessed at. Exported (not just used internally) so the in-app
+ * notification list — tapping a past notification, not just a live
+ * push — routes exactly the same way instead of maintaining a second,
+ * inevitably-diverging copy of this switch.
  */
-function handleNotificationTap(data: any) {
+export function handleNotificationTap(data: any) {
   switch (data?.type) {
     case 'new_request':
       // The notification payload only carries {type, rideId} — not a
@@ -122,10 +125,6 @@ function handleNotificationTap(data: any) {
     case 'order_status_changed':
       // Client-facing — their own order was accepted/declined/completed.
       navigate('Orders');
-      break;
-    case 'cash_payment_reported':
-      // Driver-facing — a client says they paid cash; confirm it in history.
-      navigate('EHailingHistory');
       break;
     case 'new_inquiry':
       // Shop-facing — a client asked about a part.

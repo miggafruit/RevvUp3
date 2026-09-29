@@ -135,7 +135,14 @@ export default function EHailingClientScreen() {
         longitude: ride.location.longitude,
       });
     }
-    if (ride.status === 'pending') {
+    if (ride.status === 'awaiting_payment') {
+      // Payment gates dispatch now — if a client backed out of the
+      // payment step and comes back (or reopens the app mid-payment),
+      // send them straight back to finish it rather than showing a
+      // "searching for driver" state that can never actually progress,
+      // since nothing was ever dispatched for an unpaid ride.
+      navigation.replace('RidePayment', { rideId: ride.id });
+    } else if (ride.status === 'pending') {
       setStatus('searching');
     } else if (ride.status === 'accepted' || ride.status === 'in_progress') {
       setAcceptedRequest(ride);
@@ -148,6 +155,16 @@ export default function EHailingClientScreen() {
       setStatus(ride.status === 'in_progress' ? 'in_progress' : 'accepted');
     } else if (ride.status === 'completed') {
       setStatus('completed');
+    } else if (ride.status === 'cancelled') {
+      // Reachable from the polling fallback above if a cancellation is
+      // ever picked up that way instead of via the direct socket
+      // handler. Reset immediately (not just inside the alert's
+      // callback) so the polling effect's status check stops matching
+      // right away — otherwise this would keep re-firing the same
+      // alert every 8 seconds for as long as status stayed in the
+      // tracked list.
+      resetForm();
+      showAlert('Request Cancelled', 'This request was cancelled.');
     }
   };
 
@@ -307,12 +324,73 @@ export default function EHailingClientScreen() {
     setStatus('completed');
   }, []);
 
+  // This event was already being emitted correctly by the backend to
+  // both the driver and the client's socket room (see
+  // ehailingController.cancelRequest) — nothing was ever listening for
+  // it here, though. A client with the app open and a driver already
+  // assigned would see literally nothing happen if that driver
+  // cancelled: no live update, just "your driver is on the way"
+  // sitting frozen on screen indefinitely, with the only actual
+  // indication being a push notification if they happened to check it.
+  // This event now only ever arrives here when someone OTHER than the
+  // client caused the cancellation (see ehailingController.cancelRequest
+  // — the client cancelling their own request no longer triggers this
+  // at all, which previously created a real race condition: the socket
+  // emit happened before the HTTP response even returned, so a client
+  // cancelling their own request could see this fire before their own
+  // local "cancelled" state took effect, showing a "your driver
+  // cancelled" alert about their own action). cancelledBy distinguishes
+  // an actual driver cancellation from an admin/support one, so the
+  // message said is accurate either way instead of always assuming it
+  // was the driver.
+  const handleAssignedRequestCancelled = useCallback(
+    (data: { request_id: string; cancelledBy?: string }) => {
+      if (data.request_id !== currentRequestId) return;
+      const message =
+        data.cancelledBy === 'admin'
+          ? 'This request was cancelled by support. Feel free to request again.'
+          : 'Your driver had to cancel this request. Feel free to request again.';
+      showAlert('Request Cancelled', message, [{ text: 'OK', onPress: resetForm }]);
+    },
+    [currentRequestId]
+  );
+
   useEHailingEvents({
     onRequestAccepted: handleRequestAccepted,
     onDriverLocationUpdate: handleDriverLocationUpdate,
     onDriverArrived: handleDriverArrived,
     onRequestCompleted: handleRequestCompleted,
+    onAssignedRequestCancelled: handleAssignedRequestCancelled,
   });
+
+  // Light polling fallback in case the socket connection drops —
+  // same pattern DeliveryTrackingScreen already uses. Previously this
+  // screen depended entirely on socket events for every status
+  // transition (accepted, arrived, completed, cancelled) with nothing
+  // to fall back on if even one event was ever missed — a brief
+  // disconnect at exactly the wrong moment, a reconnect race, the app
+  // backgrounded for a few seconds — and the client would be stuck on
+  // "Finding a driver..." indefinitely, with no way to recover short of
+  // leaving the screen and coming back (which re-triggers the resume
+  // check) or pulling to refresh from history. This closes that gap by
+  // re-checking the real ride status every few seconds for as long as
+  // there's an active request, and reconciling local state to match if
+  // a socket event was ever missed.
+  useEffect(() => {
+    if (!currentRequestId || !['searching', 'accepted', 'in_progress'].includes(status)) return;
+
+    const interval = setInterval(() => {
+      getRequest(currentRequestId)
+        .then((res) => applyRideState(res.data))
+        .catch(() => {
+          // A transient network hiccup here shouldn't clear the
+          // screen — just try again on the next tick.
+        });
+    }, 8000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentRequestId, status]);
 
   // ── Location ────────────────────────────────────────────────────────────────
 
@@ -548,18 +626,23 @@ export default function EHailingClientScreen() {
         beneficiary_name: form.beneficiary_name || undefined,
         beneficiary_phone: form.beneficiary_phone || undefined,
       });
-      setCurrentRequestId(res.data.id);
-      setStatus('searching');
+      // The request isn't actually sent to any driver yet at this point
+      // — it exists as 'awaiting_payment' (see ehailingController) —
+      // so straight to payment, not to a "searching for driver" state
+      // that would have nothing to search for. Real-time tracking picks
+      // up once RidePaymentScreen confirms the charge and resumes here.
+      setStatus('idle');
+      navigation.navigate('RidePayment', { rideId: res.data.id });
     } catch (error: any) {
       const message = error?.response?.data?.message || 'Could not send your request. Please try again.';
-      const unpaidRequestId = error?.response?.data?.unpaidRequestId;
+      const unfinishedRequestId = error?.response?.data?.unfinishedRequestId;
 
-      if (unpaidRequestId) {
+      if (unfinishedRequestId) {
         showAlert('Payment needed', message, [
           { text: 'Not now' },
           {
-            text: 'Pay Now',
-            onPress: () => navigation.navigate('RidePayment', { rideId: unpaidRequestId }),
+            text: 'Finish Payment',
+            onPress: () => navigation.navigate('RidePayment', { rideId: unfinishedRequestId }),
           },
         ]);
       } else {
@@ -636,14 +719,6 @@ export default function EHailingClientScreen() {
           Your {SERVICE_LABELS[form.service_type] || 'service'} has been completed.
           We hope you're back on the road!
         </Text>
-        {currentRequestId ? (
-          <TouchableOpacity
-            style={styles.orangeBtn}
-            onPress={() => navigation.navigate('RidePayment', { rideId: currentRequestId })}
-          >
-            <Text style={styles.orangeBtnText}>Pay Now</Text>
-          </TouchableOpacity>
-        ) : null}
         <TouchableOpacity style={styles.cancelLink} onPress={resetForm}>
           <Text style={styles.cancelLinkText}>New Request</Text>
         </TouchableOpacity>

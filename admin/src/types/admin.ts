@@ -109,7 +109,7 @@ export interface RideListItem {
   destination?: { address: string; latitude?: number; longitude?: number };
   vehicleDetails?: { make: string; model: string; licensePlate: string };
   driver?: { driver_id: string; driver_name: string; driver_phone: string; driver_vehicle: string };
-  status: 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'awaiting_payment' | 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
   fare?: number;
   paymentStatus: string;
   paymentMethod?: string;

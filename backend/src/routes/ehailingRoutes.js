@@ -14,8 +14,6 @@ const {
   getRequest,
   getHistory,
   payRide,
-  payCash,
-  confirmCashReceived,
 } = require("../controllers/ehailingController");
 const { protect } = require("../middleware/authMiddleware");
 
@@ -28,12 +26,11 @@ const { protect } = require("../middleware/authMiddleware");
 router.use(protect);
 
 // CLIENT routes
-router.post("/request", createRequest);                         // Create a new request
+router.post("/request", createRequest);                         // Create a new request (created as 'awaiting_payment' — not dispatched yet)
 router.get("/estimate/tow", getTowEstimate);                     // Preview tow fare before requesting
 router.get("/request/:id", getRequest);                         // Poll request status
 router.post("/request/:id/cancel", cancelRequest);               // Client (or assigned driver) cancels
-router.post("/request/:id/pay", payRide);                         // Client pays once completed
-router.post("/request/:id/pay-cash", payCash);                    // Client marks paid by cash
+router.post("/request/:id/pay", payRide);                         // Client pays — this is what actually dispatches the request to drivers
 router.get("/history", getHistory);                              // Past requests (client or driver)
 
 // DRIVER routes
@@ -43,6 +40,5 @@ router.post("/request/:id/accept", acceptRequest);                // Driver acce
 router.post("/request/:id/location", updateDriverLocation);       // Driver broadcasts location
 router.post("/request/:id/arrived", markArrived);                 // Driver marks arrived
 router.post("/request/:id/complete", completeRequest);            // Driver completes job
-router.post("/request/:id/confirm-cash", confirmCashReceived);     // Driver confirms/disputes cash receipt
 
 module.exports = router;

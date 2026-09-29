@@ -4,7 +4,7 @@ import { getRides } from '../api/adminApi';
 import { RideListItem, Pagination } from '../types/admin';
 import StatusBadge from '../components/StatusBadge';
 
-const STATUS_TABS = ['all', 'pending', 'accepted', 'in_progress', 'completed', 'cancelled'];
+const STATUS_TABS = ['all', 'awaiting_payment', 'pending', 'accepted', 'in_progress', 'completed', 'cancelled'];
 
 const clientName = (client: RideListItem['client']) =>
   typeof client === 'string' ? client : client?.name || 'Unknown';

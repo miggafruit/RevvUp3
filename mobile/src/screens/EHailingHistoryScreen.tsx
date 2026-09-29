@@ -15,7 +15,7 @@ import { useNavigation } from "@react-navigation/native";
 import type { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import type { RootStackParamList } from "../types/navigation";
 import { useAuth } from "../context/AuthContext";
-import { getHistory, confirmCashReceived } from "../api/ehailingApi";
+import { getHistory } from "../api/ehailingApi";
 import { LIVE_RIDE_STATUSES } from "../constants/roadsideServices";
 
 const SERVICE_LABELS: Record<string, string> = {
@@ -28,6 +28,7 @@ const SERVICE_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
+  awaiting_payment: "#EAB308",
   pending: "#F97316",
   accepted: "#3B82F6",
   in_progress: "#8B5CF6",
@@ -36,6 +37,7 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const STATUS_LABELS: Record<string, string> = {
+  awaiting_payment: "Awaiting Payment",
   pending: "Pending",
   accepted: "Driver Assigned",
   in_progress: "In Progress",
@@ -52,10 +54,8 @@ type HistoryItem = {
   fare?: number;
   createdAt: string;
   driver?: { driver_id?: string; driver_name: string };
-  paymentMethod?: 'paystack' | 'cash';
+  paymentMethod?: 'paystack';
   paymentStatus?: 'pending' | 'paid' | 'failed';
-  driverCashConfirmed?: boolean;
-  cashDisputedByDriver?: boolean;
 };
 
 export default function EHailingHistoryScreen() {
@@ -65,7 +65,6 @@ export default function EHailingHistoryScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -102,29 +101,6 @@ export default function EHailingHistoryScreen() {
         "Active job",
         "Open \"View Job Requests\" from your dashboard to see your current active job — resuming it directly from history isn't available yet."
       );
-    }
-  };
-
-  const handleCashConfirm = async (item: HistoryItem, received: boolean) => {
-    setConfirmingId(item.id);
-    try {
-      const res = await confirmCashReceived(item.id, received);
-      const updated = res?.data;
-      setItems((prev) =>
-        prev.map((it) =>
-          it.id === item.id
-            ? {
-                ...it,
-                driverCashConfirmed: updated?.driverCashConfirmed ?? received,
-                cashDisputedByDriver: updated?.cashDisputedByDriver ?? !received,
-              }
-            : it
-        )
-      );
-    } catch {
-      showAlert('Error', "Couldn't update this — please try again.");
-    } finally {
-      setConfirmingId(null);
     }
   };
 
@@ -185,51 +161,6 @@ export default function EHailingHistoryScreen() {
             <Text style={styles.infoText}>R{item.fare}</Text>
           </View>
         ) : null}
-
-        {item.paymentMethod === 'cash' &&
-          item.status === 'completed' &&
-          user?.role !== 'client' &&
-          item.driver?.driver_id === user?.id && (
-            <View style={styles.cashConfirmBox}>
-              {item.driverCashConfirmed ? (
-                <View style={styles.cashRow}>
-                  <MaterialCommunityIcons name="check-circle" size={15} color="#22c55e" />
-                  <Text style={[styles.cashConfirmText, { color: '#22c55e' }]}>Cash receipt confirmed</Text>
-                </View>
-              ) : item.cashDisputedByDriver ? (
-                <View style={styles.cashRow}>
-                  <MaterialCommunityIcons name="alert-circle" size={15} color="#EF4444" />
-                  <Text style={[styles.cashConfirmText, { color: '#EF4444' }]}>You flagged this as not received</Text>
-                </View>
-              ) : (
-                <>
-                  <Text style={styles.cashConfirmText}>
-                    Client says they paid you R{item.fare} in cash — did you receive it?
-                  </Text>
-                  <View style={styles.cashButtonsRow}>
-                    <TouchableOpacity
-                      style={styles.cashYesBtn}
-                      disabled={confirmingId === item.id}
-                      onPress={() => handleCashConfirm(item, true)}
-                    >
-                      {confirmingId === item.id ? (
-                        <ActivityIndicator size="small" color="white" />
-                      ) : (
-                        <Text style={styles.cashBtnText}>Yes, received</Text>
-                      )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.cashNoBtn}
-                      disabled={confirmingId === item.id}
-                      onPress={() => handleCashConfirm(item, false)}
-                    >
-                      <Text style={[styles.cashBtnText, { color: '#EF4444' }]}>Didn't receive it</Text>
-                    </TouchableOpacity>
-                  </View>
-                </>
-              )}
-            </View>
-          )}
 
         {isLive && (
           <View style={styles.liveRow}>

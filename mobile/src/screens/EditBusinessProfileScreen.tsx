@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -13,15 +13,23 @@ import { showAlert } from '../utils/crossPlatformAlert';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from '../context/AuthContext';
 import { updateProfile } from '../api/authApi';
+import { getVideoUploadSignature, uploadVideoToCloudinary } from '../api/uploadApi';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import { isPlayableVideoUrl } from '../utils/video';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'EditBusinessProfile'>;
 
 const MAX_PORTFOLIO_IMAGES = 12;
+// Caps how long a recorded/picked video can be — keeps upload size and
+// time reasonable over mobile data, and keeps a profile video feeling
+// like a quick highlight rather than something someone has to sit
+// through.
+const MAX_VIDEO_DURATION_SECONDS = 60;
 
 const pickImage = async (): Promise<string | null> => {
   const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -42,13 +50,39 @@ const pickImage = async (): Promise<string | null> => {
   return `data:${mime};base64,${asset.base64}`;
 };
 
-// This screen exists because there was previously no way at all to add
-// a profile photo, describe qualifications/experience, or showcase
-// portfolio work — testers flagged this directly ("editing my profile
-// and adding pictures and videos and my qualifications doesn't seem to
-// be possible"). Video is handled as a link (YouTube, etc.) rather than
-// an uploaded file — storing video as base64 doesn't scale the way an
-// image does.
+// Previously "video" only ever meant pasting an external link. Real
+// upload needs storage that isn't this app's own database (see
+// backend/src/config/cloudinary.js for why) — Cloudinary handles that
+// now, with the actual file going straight from the phone to
+// Cloudinary using a signature this backend generates, never through
+// our own server. The link field is kept as a fallback: if Cloudinary
+// isn't configured yet, or someone already has a video hosted
+// elsewhere (YouTube etc.), pasting a link still works exactly as
+// before.
+const pickVideo = async (): Promise<{ uri: string } | null> => {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (!permission.granted) {
+    showAlert('Permission Needed', 'Please allow photo library access to upload a video.');
+    return null;
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Videos,
+    quality: 0.6,
+    videoMaxDuration: MAX_VIDEO_DURATION_SECONDS,
+  });
+
+  if (result.canceled || !result.assets?.[0]?.uri) return null;
+  return { uri: result.assets[0].uri };
+};
+
+// An uploaded (Cloudinary) or otherwise direct video file can be
+// played inline with VideoView; an external page like a YouTube watch
+// link cannot — trying to hand VideoView a webpage URL just fails
+// silently. isPlayableVideoUrl (shared with the client-facing detail
+// screens) is the same good-enough heuristic used everywhere a profile
+// video might be shown.
+
 const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
   const { user, setUser } = useAuth();
   const isShop = user?.role === 'shop';
@@ -90,6 +124,50 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
   const [isPickingPhoto, setIsPickingPhoto] = useState(false);
   const [isAddingPortfolio, setIsAddingPortfolio] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingVideo, setIsUploadingVideo] = useState(false);
+  const [videoUploadProgress, setVideoUploadProgress] = useState(0);
+
+  // Only for inline preview of a video that's actually playable in-app
+  // (something we or the user uploaded) — an external link (YouTube
+  // etc.) can't be embedded this way, so the player only renders when
+  // there's a real, direct video URL to hand it.
+  const videoPlayer = useVideoPlayer(profileVideoUrl || null, (player) => {
+    player.loop = false;
+  });
+
+  // useVideoPlayer only sets the source once, at creation — it doesn't
+  // automatically pick up a changed profileVideoUrl on its own (e.g.
+  // right after a fresh upload finishes, or when the person types/
+  // clears the link field), so the player has to be told explicitly.
+  useEffect(() => {
+    if (profileVideoUrl) {
+      videoPlayer.replace(profileVideoUrl);
+    }
+  }, [profileVideoUrl]);
+
+  const handlePickAndUploadVideo = async () => {
+    const picked = await pickVideo();
+    if (!picked) return;
+
+    setIsUploadingVideo(true);
+    setVideoUploadProgress(0);
+    try {
+      const signature = await getVideoUploadSignature();
+      const uploadedUrl = await uploadVideoToCloudinary(picked.uri, signature, setVideoUploadProgress);
+      setProfileVideoUrl(uploadedUrl);
+    } catch (error: any) {
+      // 503 means Cloudinary just isn't configured yet on the backend
+      // — a real, expected state until that's set up, not a bug — so
+      // this surfaces the backend's own explanation rather than a
+      // generic upload-failed message.
+      showAlert(
+        'Could Not Upload Video',
+        error?.response?.data?.message || error?.message || 'Please try again, or paste a video link instead.'
+      );
+    } finally {
+      setIsUploadingVideo(false);
+    }
+  };
 
   const handlePickProfilePhoto = async () => {
     setIsPickingPhoto(true);
@@ -176,15 +254,52 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
         />
 
         <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Video (optional)</Text>
-        <Text style={styles.helperText}>Link to a video of your work — YouTube, etc.</Text>
+        <Text style={styles.helperText}>A short video of your work, or a link to one hosted elsewhere.</Text>
+
+        {isPlayableVideoUrl(profileVideoUrl) && (
+          <View style={styles.videoPreviewWrap}>
+            <VideoView
+              player={videoPlayer}
+              style={styles.videoPreview}
+              contentFit="cover"
+              allowsFullscreen
+              nativeControls
+            />
+            <TouchableOpacity
+              style={styles.removeVideoBadge}
+              onPress={() => setProfileVideoUrl('')}
+            >
+              <Text style={styles.removeBadgeText}>✕</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {isUploadingVideo ? (
+          <View style={styles.videoUploadingBox}>
+            <ActivityIndicator color={colors.accent} />
+            <Text style={styles.videoUploadingText}>
+              Uploading video… {Math.round(videoUploadProgress * 100)}%
+            </Text>
+          </View>
+        ) : (
+          <TouchableOpacity style={styles.videoUploadButton} onPress={handlePickAndUploadVideo}>
+            <MaterialCommunityIcons name="video-plus-outline" size={20} color={colors.accent} />
+            <Text style={styles.videoUploadButtonText}>
+              {profileVideoUrl ? 'Replace Video' : 'Upload a Video'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
+        <Text style={styles.orDividerText}>— or paste a link instead —</Text>
         <TextInput
           style={styles.input}
-          value={profileVideoUrl}
+          value={isPlayableVideoUrl(profileVideoUrl) ? '' : profileVideoUrl}
           onChangeText={setProfileVideoUrl}
           placeholder="https://youtube.com/..."
           placeholderTextColor={colors.textMuted}
           autoCapitalize="none"
           keyboardType="url"
+          editable={!isPlayableVideoUrl(profileVideoUrl)}
         />
 
         <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>{copy.galleryTitle}</Text>
@@ -293,6 +408,44 @@ const styles = StyleSheet.create({
     marginTop: spacing.xxl,
   },
   saveButtonText: { color: colors.white, fontWeight: '700', fontSize: 15 },
+  videoPreviewWrap: { position: 'relative', marginBottom: spacing.sm },
+  videoPreview: { width: '100%', height: 180, borderRadius: radius.sm, backgroundColor: colors.surface },
+  removeVideoBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoUploadButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    borderStyle: 'dashed',
+    borderRadius: radius.sm,
+    paddingVertical: 14,
+    marginBottom: spacing.sm,
+  },
+  videoUploadButtonText: { color: colors.accent, fontWeight: '700', fontSize: 13.5 },
+  videoUploadingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    paddingVertical: 14,
+    marginBottom: spacing.sm,
+  },
+  videoUploadingText: { color: colors.textSecondary, fontSize: 13 },
+  orDividerText: { color: colors.textMuted, fontSize: 11, textAlign: 'center', marginBottom: spacing.sm },
 });
 
 export default EditBusinessProfileScreen;

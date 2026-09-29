@@ -18,4 +18,4 @@ export const ROADSIDE_SERVICE_OPTIONS: { value: string; label: string }[] = [
 // any of these statuses. Shared between the history screen (deciding
 // which items are tappable) and the client screen (auto-detecting an
 // existing active request on mount).
-export const LIVE_RIDE_STATUSES = ['pending', 'accepted', 'in_progress'];
+export const LIVE_RIDE_STATUSES = ['awaiting_payment', 'pending', 'accepted', 'in_progress'];

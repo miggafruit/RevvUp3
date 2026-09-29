@@ -13,6 +13,7 @@ import {
 import { showAlert } from '../utils/crossPlatformAlert';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/PlatformMap';
 import MapUnavailableNotice from '../components/MapUnavailableNotice';
+import NotificationBell from '../components/NotificationBell';
 import { hasGoogleMapsKey } from '../utils/mapsConfig';
 
 import { Feather, MaterialCommunityIcons } from '@expo/vector-icons';
@@ -215,10 +216,22 @@ export default function EHailingDriverScreen() {
     setPendingRequests((prev) => prev.filter((r) => r.id !== request_id));
   }, []);
 
+  // Broadcast to every driver (not just one assigned to it, since
+  // nobody's accepted this one yet) whenever a client cancels a
+  // request that's still just sitting in everyone's pending list. The
+  // backend already emitted this correctly; nothing here was listening
+  // for it, so a cancelled job would linger in a driver's list — still
+  // tappable, just guaranteed to fail — until the next 15s poll
+  // happened to clear it out instead of disappearing immediately.
+  const handleRequestCancelledWhilePending = useCallback(({ request_id }: { request_id: string }) => {
+    setPendingRequests((prev) => prev.filter((r) => r.id !== request_id));
+  }, []);
+
   const handleAssignedCancelled = useCallback(
-    ({ request_id }: { request_id: string }) => {
+    ({ request_id, cancelledBy }: { request_id: string; cancelledBy?: string }) => {
       if (activeRequest?.id === request_id) {
-        showAlert('Cancelled', 'The client has cancelled this request.');
+        const message = cancelledBy === 'admin' ? 'This request was cancelled by support.' : 'The client has cancelled this request.';
+        showAlert('Cancelled', message);
         if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
         setActiveRequest(null);
         setMode('online');
@@ -230,6 +243,7 @@ export default function EHailingDriverScreen() {
   const { emitDriverLocation } = useEHailingEvents({
     onNewRequest: handleNewRequest,
     onRequestTaken: handleRequestTaken,
+    onRequestCancelled: handleRequestCancelledWhilePending,
     onAssignedRequestCancelled: handleAssignedCancelled,
   });
 
@@ -603,9 +617,12 @@ export default function EHailingDriverScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: '#0A1628' }}>
-      <TouchableOpacity onPress={() => navigation.goBack()} style={{ paddingHorizontal: 20, paddingTop: 12 }}>
-        <Text style={{ color: '#9CA3AF', fontSize: 15 }}>← Back</Text>
-      </TouchableOpacity>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 12 }}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={{ color: '#9CA3AF', fontSize: 15 }}>← Back</Text>
+        </TouchableOpacity>
+        <NotificationBell />
+      </View>
       <View style={styles.header}>
         <View>
           <Text style={styles.headerGreeting}>

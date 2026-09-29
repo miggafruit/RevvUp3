@@ -25,7 +25,10 @@ const RECOMMENDED_VARS = [
   { name: 'RESEND_API_KEY', why: 'password reset emails will silently fail to send without it' },
   { name: 'GOOGLE_MAPS_API_KEY', why: 'address autocomplete/geocoding falls back to straight-line distance without it — works, but degraded' },
   { name: 'APP_RESET_URL', why: 'password reset emails will omit the deep link without it' },
-  { name: 'SENTRY_DSN', why: 'errors and crashes will only ever show up in server logs, with no alerting, until this is set' }
+  { name: 'SENTRY_DSN', why: 'errors and crashes will only ever show up in server logs, with no alerting, until this is set' },
+  { name: 'CLOUDINARY_CLOUD_NAME', why: 'video upload for profile videos will be unavailable — users can still paste a video link instead' },
+  { name: 'CLOUDINARY_API_KEY', why: 'video upload for profile videos will be unavailable — users can still paste a video link instead' },
+  { name: 'CLOUDINARY_API_SECRET', why: 'video upload for profile videos will be unavailable — users can still paste a video link instead' }
 ];
 
 function validateEnv() {

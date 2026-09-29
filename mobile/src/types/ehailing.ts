@@ -15,11 +15,11 @@ export interface Ride {
   forSomeoneElse?: boolean;
   beneficiaryName?: string;
   beneficiaryPhone?: string;
-  status: 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'awaiting_payment' | 'pending' | 'accepted' | 'in_progress' | 'completed' | 'cancelled';
   fare?: number;
   distanceKm?: number;
   paymentStatus: 'pending' | 'paid' | 'failed';
-  paymentMethod?: 'paystack' | 'cash';
+  paymentMethod?: 'paystack';
   paymentReference?: string;
   createdAt: string;
   acceptedAt?: string;

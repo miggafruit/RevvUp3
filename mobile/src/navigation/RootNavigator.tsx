@@ -52,6 +52,7 @@ import RateOrderScreen from '../screens/RateOrderScreen';
 import IncomingOrdersScreen from '../screens/IncomingOrdersScreen';
 import PartInquiriesScreen from '../screens/PartInquiriesScreen';
 import MyInquiriesScreen from '../screens/MyInquiriesScreen';
+import NotificationsScreen from '../screens/NotificationsScreen';
 import EditBusinessProfileScreen from '../screens/EditBusinessProfileScreen';
 
 // promotions
@@ -148,6 +149,7 @@ const RootNavigator: React.FC = () => {
         <Stack.Screen name="IncomingOrders" component={IncomingOrdersScreen} />
         <Stack.Screen name="PartInquiries" component={PartInquiriesScreen} />
         <Stack.Screen name="MyInquiries" component={MyInquiriesScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="EditBusinessProfile" component={EditBusinessProfileScreen} />
 
         {/* Promotions */}

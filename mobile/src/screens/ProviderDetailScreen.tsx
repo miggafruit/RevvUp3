@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Image, ScrollView, Linking } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import * as promotionApi from '../api/promotionApi';
 import * as businessApi from '../api/businessApi';
 import { ProviderListing } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import { isPlayableVideoUrl } from '../utils/video';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProviderDetail'>;
 
@@ -13,6 +15,19 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { providerId, providerName } = route.params;
   const [hasPromotion, setHasPromotion] = useState(false);
   const [provider, setProvider] = useState<ProviderListing | null>(null);
+
+  // Only ever actually plays something once profile data has loaded
+  // and there's a real, direct video URL — expo-video is fine being
+  // initialized with null and given a real source later via .replace().
+  const videoPlayer = useVideoPlayer(null, (player) => {
+    player.loop = false;
+  });
+
+  useEffect(() => {
+    if (provider?.profileVideoUrl && isPlayableVideoUrl(provider.profileVideoUrl)) {
+      videoPlayer.replace(provider.profileVideoUrl);
+    }
+  }, [provider?.profileVideoUrl]);
 
   useEffect(() => {
     promotionApi
@@ -63,9 +78,15 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         )}
 
         {!!provider?.profileVideoUrl && (
-          <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(provider.profileVideoUrl!)}>
-            <Text style={styles.videoLinkText}>▶ Watch video</Text>
-          </TouchableOpacity>
+          isPlayableVideoUrl(provider.profileVideoUrl) ? (
+            <View style={styles.videoPreviewWrap}>
+              <VideoView player={videoPlayer} style={styles.videoPreview} contentFit="cover" allowsFullscreen nativeControls />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(provider.profileVideoUrl!)}>
+              <Text style={styles.videoLinkText}>▶ Watch video</Text>
+            </TouchableOpacity>
+          )
         )}
 
         {!!provider?.portfolioImages?.length && (
@@ -128,6 +149,8 @@ const styles = StyleSheet.create({
   qualificationsTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 13, marginBottom: 6 },
   qualificationsText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   videoLink: { marginBottom: spacing.md },
+  videoPreviewWrap: { width: '100%', marginBottom: spacing.md },
+  videoPreview: { width: '100%', height: 200, borderRadius: radius.lg, backgroundColor: colors.surface },
   videoLinkText: { color: colors.accent, fontWeight: '700', fontSize: 13.5 },
   portfolioSection: { width: '100%', marginBottom: spacing.lg },
   portfolioGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

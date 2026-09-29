@@ -52,12 +52,6 @@ export const getTowEstimate = (params: {
 export const payRide = (id: string, paymentReference: string) =>
   apiClient.post(`/ehailing/request/${id}/pay`, { paymentReference }).then((r) => r.data);
 
-export const payCash = (id: string) =>
-  apiClient.post(`/ehailing/request/${id}/pay-cash`).then((r) => r.data);
-
-export const confirmCashReceived = (id: string, received: boolean = true) =>
-  apiClient.post(`/ehailing/request/${id}/confirm-cash`, { received }).then((r) => r.data);
-
 // ─── DRIVER ──────────────────────────────────────────────────────────────────
 
 // Previously nothing ever called this (it didn't exist on the backend

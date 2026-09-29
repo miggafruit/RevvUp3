@@ -16,6 +16,8 @@ const deliveryRoutes = require('./routes/deliveryRoutes'); // ✅ ADD THIS
 const adminRoutes = require('./routes/adminRoutes');
 const ratingRoutes = require('./routes/ratingRoutes');
 const inquiryRoutes = require('./routes/inquiryRoutes');
+const uploadRoutes = require('./routes/uploadRoutes');
+const notificationRoutes = require('./routes/notificationRoutes');
 
 const { errorHandler, notFound } = require('./middleware/errorMiddleware');
 const { apiLimiter } = require('./middleware/rateLimiter');
@@ -60,6 +62,8 @@ app.use('/api/deliveries', deliveryRoutes); // ✅ ADD THIS
 app.use('/api/admin', adminRoutes);
 app.use('/api/ratings', ratingRoutes);
 app.use('/api/inquiries', inquiryRoutes);
+app.use('/api/uploads', uploadRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 app.use(notFound);
 // Reports thrown/passed-to-next(err) errors to Sentry (no-ops if

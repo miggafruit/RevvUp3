@@ -70,8 +70,15 @@ const rideSchema = new mongoose.Schema(
     beneficiaryPhone: { type: String, trim: true },
     status: {
       type: String,
-      enum: ['pending', 'accepted', 'in_progress', 'completed', 'cancelled'],
-      default: 'pending',
+      // 'awaiting_payment' is the pre-dispatch state: the ride exists
+      // and the fare is locked in, but no driver has been notified yet
+      // — that only happens once payment succeeds (see payRide). This
+      // is what makes "request can only be sent when payment is
+      // successful" actually true, the way Uber/Bolt work, rather than
+      // dispatching first and hoping the client pays after the job's
+      // already done.
+      enum: ['awaiting_payment', 'pending', 'accepted', 'in_progress', 'completed', 'cancelled'],
+      default: 'awaiting_payment',
       index: true
     },
     fare: {
@@ -87,23 +94,15 @@ const rideSchema = new mongoose.Schema(
       enum: ['pending', 'paid', 'failed'],
       default: 'pending'
     },
+    // Card only — cash payment for e-hailing was removed. It couldn't
+    // be verified the way a Paystack reference can be, which is
+    // exactly why it needed its own separate driver-confirmation/
+    // dispute mechanism in the first place; requiring a real card
+    // payment before dispatch removes that whole problem rather than
+    // working around it.
     paymentMethod: {
       type: String,
-      enum: ['paystack', 'cash']
-    },
-    // Cash changes hands outside the app, so the client's "I paid" tap
-    // alone isn't verifiable the way a Paystack reference is. This is a
-    // second, independent confirmation from the driver's side — it
-    // doesn't gate the client (they're already unblocked once they've
-    // reported paying), it's a record for accountability/disputes.
-    driverCashConfirmed: {
-      type: Boolean,
-      default: false
-    },
-    driverCashConfirmedAt: Date,
-    cashDisputedByDriver: {
-      type: Boolean,
-      default: false
+      enum: ['paystack']
     },
     distanceKm: Number,
     cancelledBy: {

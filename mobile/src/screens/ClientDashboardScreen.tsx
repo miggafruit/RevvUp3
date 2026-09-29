@@ -10,6 +10,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import NotificationBell from '../components/NotificationBell';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClientDashboard'>;
 
@@ -81,6 +82,8 @@ const ClientDashboardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
 
           <View style={styles.headerActions}>
+            <NotificationBell />
+
             <TouchableOpacity style={styles.iconButton} onPress={() => navigation.navigate('Cart')}>
               <Feather name="shopping-cart" size={20} color={colors.textPrimary} />
               {itemCount > 0 && (

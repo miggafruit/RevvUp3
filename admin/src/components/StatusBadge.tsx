@@ -2,6 +2,7 @@ import React from 'react';
 
 const STATUS_STYLES: Record<string, string> = {
   pending: 'bg-brand-red-dim text-brand-red border-brand-red/30',
+  awaiting_payment: 'bg-amber-500/10 text-amber-500 border-amber-500/30',
   accepted: 'bg-surface text-text-secondary border-border',
   in_progress: 'bg-surface text-text-secondary border-border',
   confirmed: 'bg-surface text-text-secondary border-border',

@@ -1,6 +1,7 @@
 const Ride = require('../models/Ride');
 const User = require('../models/User');
 const { getDistanceAndDuration } = require('../utils/distance');
+const { haversineDistanceKm } = require('../utils/geo');
 const { estimateTowFare, estimateCalloutFare } = require('../config/pricing');
 const { findNearbyAvailableDrivers } = require('../utils/matching');
 const { verifyPaystackTransaction } = require('../utils/paystack');
@@ -11,6 +12,36 @@ const { amountMatchesExpected } = require('../utils/paymentVerification');
 const { reportSilentFailure } = require('../utils/reportSilentFailure');
 
 const TOW_SERVICE_TYPES = ['tow_sling', 'tow_rollback'];
+
+/**
+ * Actually notifies drivers a request exists — socket broadcast + push
+ * notification. Only ever called once payment has succeeded (from
+ * payRide), never from createRequest directly, which is the whole
+ * mechanism behind "a request can only be sent once payment is
+ * successful." Re-queries availability fresh at call time rather than
+ * reusing whoever was online back when the ride was first priced —
+ * payment can take the client a minute or two, so who's actually online
+ * now may have changed. If literally nobody is available by the time
+ * payment clears, this just dispatches to an empty list; the ride still
+ * sits in 'pending' and any driver who opens their app afterward will
+ * still see it via the polling fallback in getPendingRequests, so a
+ * paid ride is never silently stranded.
+ */
+const dispatchToNearbyDrivers = async (ride, io) => {
+  const nearbyDrivers = await findNearbyAvailableDrivers(ride.location, 15, ride.serviceType);
+
+  if (io) {
+    nearbyDrivers.forEach((driver) => {
+      io.to(`driver_${driver._id}`).emit('new_request', ride);
+    });
+  }
+
+  sendPushNotifications(nearbyDrivers, {
+    title: 'New job request',
+    body: `A ${ride.serviceType.replace('_', ' ')} request just came in near you.`,
+    data: { type: 'new_request', rideId: String(ride._id) }
+  });
+};
 
 /**
  * CLIENT: Create a new roadside/eHailing request
@@ -38,22 +69,23 @@ const createRequest = async (req, res, next) => {
       });
     }
 
-    // Roadside/tow is necessarily pay-after — you can't prepay a tow
-    // truck for work that hasn't happened yet, unlike a marketplace
-    // order. But nothing was stopping a client from requesting job
-    // after job while leaving every previous one unpaid. This doesn't
-    // require prepayment (that would be the wrong fix for this kind of
-    // service); it just requires settling up before starting a new one.
-    const unpaidCompletedRide = await Ride.findOne({
+    // Card-payment-before-dispatch (see below) replaces the old "settle
+    // your last unpaid completed ride first" guard entirely — a ride
+    // can no longer reach 'completed' without already being paid, since
+    // payment is now required before a driver ever sees the request at
+    // all. What can still pile up is a ride sitting in
+    // 'awaiting_payment' if someone abandons the payment step, so that's
+    // what's actually guarded against now: one unfinished request at a
+    // time, not one unpaid one.
+    const unfinishedRide = await Ride.findOne({
       client: req.user._id,
-      status: 'completed',
-      paymentStatus: { $ne: 'paid' }
+      status: 'awaiting_payment'
     });
-    if (unpaidCompletedRide) {
+    if (unfinishedRide) {
       return res.status(400).json({
         success: false,
-        message: 'You have a completed request that still needs to be paid before you can make a new one.',
-        unpaidRequestId: unpaidCompletedRide._id
+        message: 'You already have a request waiting on payment. Complete or cancel it before making a new one.',
+        unfinishedRequestId: unfinishedRide._id
       });
     }
 
@@ -76,9 +108,9 @@ const createRequest = async (req, res, next) => {
 
     if (isTow) {
       // A tow works exactly like an Uber/Bolt request — pickup point to
-      // delivery point, both known upfront, so (unlike the other
-      // roadside services below) the fare is real and final right now,
-      // not an estimate deferred to whichever driver happens to accept.
+      // delivery point, both known upfront, so the fare is real and
+      // final right now, not an estimate deferred to whichever driver
+      // happens to accept.
       if (!destination?.address || destination?.latitude == null || destination?.longitude == null) {
         return res.status(400).json({
           success: false,
@@ -105,6 +137,34 @@ const createRequest = async (req, res, next) => {
       fare = estimateTowFare(service_type, distanceKm).fare;
     }
 
+    // Checked for every service type now, before the ride is even
+    // created — previously a client could pay for a callout with
+    // literally nobody online to respond to it, and only find that out
+    // after handing over their card details. This is also what prices
+    // a callout: the same way Uber shows you a fare before you request
+    // based on nearby driver positions, the nearest currently-available
+    // responder's distance is what the flat-plus-per-km callout rate is
+    // computed against, rather than waiting to know which specific
+    // driver ultimately accepts.
+    const nearbyDrivers = await findNearbyAvailableDrivers(location, 15, service_type);
+    if (nearbyDrivers.length === 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'No one is available for this service near you right now. Please try again shortly.'
+      });
+    }
+
+    if (!isTow) {
+      const nearest = nearbyDrivers.find((d) => d.currentLocation?.coordinates);
+      distanceKm = nearest
+        ? haversineDistanceKm(location, {
+            latitude: nearest.currentLocation.coordinates[1],
+            longitude: nearest.currentLocation.coordinates[0]
+          })
+        : 0;
+      fare = estimateCalloutFare(distanceKm);
+    }
+
     const ride = await Ride.create({
       client: req.user._id,
       serviceType: service_type,
@@ -119,33 +179,15 @@ const createRequest = async (req, res, next) => {
       beneficiaryPhone: beneficiary_phone,
       distanceKm,
       fare,
-      status: 'pending'
+      status: 'awaiting_payment'
     });
 
-    // Broadcast to nearby available drivers only, not every connected
-    // driver everywhere — same room convention as before ("drivers"),
-    // but the prototype broadcast to literally everyone regardless of
-    // distance. Real matching lands here instead.
-    const nearbyDrivers = await findNearbyAvailableDrivers(location, 15, service_type);
+    // Deliberately NOT dispatched yet — no socket broadcast, no push
+    // notification to drivers. That only happens once payment actually
+    // succeeds (see payRide), which is the entire point: a driver
+    // should never see, and can never accept, a request that hasn't
+    // been paid for.
     const populatedRide = await Ride.findById(ride._id).populate('client', 'name phone pushToken');
-    const io = req.app.get('io');
-    if (io) {
-      nearbyDrivers.forEach((driver) => {
-        io.to(`driver_${driver._id}`).emit('new_request', populatedRide);
-      });
-    }
-
-    // Push covers what the socket can't — a driver whose app is
-    // backgrounded or closed still gets notified. Sent to everyone
-    // matched, same audience as the socket broadcast above, not sent
-    // synchronously blocking the response since a push failure should
-    // never delay or break the actual request creation.
-    sendPushNotifications(nearbyDrivers, {
-      title: 'New job request',
-      body: `A ${service_type.replace('_', ' ')} request just came in near you.`,
-      data: { type: 'new_request', rideId: String(ride._id) }
-    });
-
     return res.status(201).json({ success: true, data: populatedRide });
   } catch (error) {
     next(error);
@@ -278,23 +320,16 @@ const acceptRequest = async (req, res, next) => {
       return res.status(403).json({ success: false, message: 'Your account needs to complete verification before accepting jobs.' });
     }
 
-    // Tow requests are already fully priced — fare was computed at
-    // request time using pickup-to-destination distance, known upfront
-    // just like an Uber/Bolt fare. Recomputing it here using
-    // driver-to-client distance would be wrong (that's not what a tow
-    // is priced on) and would silently overwrite the real fare the
-    // client already saw before requesting.
-    const isTow = TOW_SERVICE_TYPES.includes(ride.serviceType);
-
-    // The distance that determines the fare for non-tow services is
-    // driver-to-client — not knowable until now, since which driver
-    // accepts wasn't known when the request was created. Prefer fresh
-    // GPS sent in the request body (the mobile app captures this at the
-    // moment of accepting) over the stored User.currentLocation, which
-    // defaults to [0,0] until a driver has ever called
-    // updateDriverLocation — trusting only the stored value would
-    // silently compute fare from Null Island on a driver's very first
-    // accept.
+    // Driver's current location is still worth capturing for live
+    // tracking, but the fare itself must NOT be touched here anymore.
+    // Under the pay-before-dispatch model, the client already paid an
+    // exact amount before this job was ever dispatched (see
+    // createRequest/payRide) — recomputing it against whichever
+    // specific driver happens to accept would silently replace the
+    // amount actually charged with a different number, which is
+    // exactly the kind of mismatch that would make the platform pay a
+    // driver more (or less) than it actually collected. The fare is
+    // locked in at request time now, full stop.
     const bodyLocation = req.body.driver_location;
     const driverLocation =
       bodyLocation?.latitude != null && bodyLocation?.longitude != null
@@ -303,21 +338,7 @@ const acceptRequest = async (req, res, next) => {
           ? { latitude: req.user.currentLocation.coordinates[1], longitude: req.user.currentLocation.coordinates[0] }
           : null;
 
-    let distanceKm;
-    let fare;
-    if (!isTow && driverLocation) {
-      const estimate = await getDistanceAndDuration(driverLocation, ride.location);
-      distanceKm = estimate.distanceKm;
-      fare = estimateCalloutFare(distanceKm);
-
-      // Keep the driver's own User document current too, since this is
-      // the freshest location we have for them.
-      await User.findByIdAndUpdate(req.user._id, {
-        currentLocation: { type: 'Point', coordinates: [driverLocation.longitude, driverLocation.latitude] }
-      });
-    } else if (driverLocation) {
-      // Still worth updating the driver's stored location for a tow
-      // acceptance, just without letting it touch the fare.
+    if (driverLocation) {
       await User.findByIdAndUpdate(req.user._id, {
         currentLocation: { type: 'Point', coordinates: [driverLocation.longitude, driverLocation.latitude] }
       });
@@ -337,8 +358,6 @@ const acceptRequest = async (req, res, next) => {
         : undefined,
       driver_location: driverLocation || undefined
     };
-    if (distanceKm !== undefined) ride.distanceKm = distanceKm;
-    if (fare !== undefined) ride.fare = fare;
     ride.acceptedAt = new Date();
     await ride.save();
 
@@ -464,6 +483,21 @@ const completeRequest = async (req, res, next) => {
 
     await User.findByIdAndUpdate(req.user._id, { isAvailable: true });
 
+    // Payment already happened before this job was ever dispatched
+    // (see createRequest/payRide) — this is now the moment the driver
+    // has actually earned it, so the payout entry is created here
+    // instead of at payment time. Crediting it at payment time would
+    // have meant paying a driver for a job that could still be
+    // cancelled or abandoned before completion.
+    if (ride.driver?.driver_id) {
+      await createPayoutEntry({
+        recipient: ride.driver.driver_id,
+        amount: ride.fare,
+        sourceType: 'ride_fare',
+        sourceId: ride._id
+      });
+    }
+
     const io = req.app.get('io');
     if (io) {
       io.to(`client_${clientRoomId(ride)}`).emit('request_completed', { request_id: id, fare: ride.fare });
@@ -471,7 +505,7 @@ const completeRequest = async (req, res, next) => {
 
     sendPushNotifications([ride.client], {
       title: 'Job completed',
-      body: ride.fare ? `Your request is done — R${ride.fare} due.` : 'Your request is done.',
+      body: 'Your request is done — thanks for using RevvUp!',
       data: { type: 'request_completed', rideId: id }
     });
 
@@ -514,9 +548,26 @@ const cancelRequest = async (req, res, next) => {
     if (io) {
       io.to('drivers').emit('request_cancelled', { request_id: id });
       if (ride.driver?.driver_id) {
-        io.to(`driver_${ride.driver.driver_id}`).emit('assigned_request_cancelled', { request_id: id });
+        io.to(`driver_${ride.driver.driver_id}`).emit('assigned_request_cancelled', {
+          request_id: id,
+          cancelledBy: ride.cancelledBy
+        });
       }
-      io.to(`client_${clientRoomId(ride)}`).emit('assigned_request_cancelled', { request_id: id });
+      // Only tell the client if they weren't the one who cancelled —
+      // previously this fired unconditionally, including back at the
+      // client who'd just cancelled their own request. Because the
+      // socket emit happens here, before this HTTP response is even
+      // sent, that event could arrive at the client's app before its
+      // own cancelRequest() call resolves — a genuine race, not a
+      // theoretical one — which meant a client cancelling their own
+      // request could see a confusing "Your driver had to cancel this
+      // request" alert about their own action.
+      if (!isClientOwner) {
+        io.to(`client_${clientRoomId(ride)}`).emit('assigned_request_cancelled', {
+          request_id: id,
+          cancelledBy: ride.cancelledBy
+        });
+      }
     }
 
     // Only notify whichever party didn't cancel it themselves — a push
@@ -590,13 +641,14 @@ const getHistory = async (req, res, next) => {
 // @route   POST /api/ehailing/request/:id/pay
 // @access  Private (client only, must own the ride)
 // body: { paymentReference }
-// Only usable once the job is completed — same guard payOrder uses for
-// orders ("the seller has not accepted this order yet"), adapted: you
-// can't pay for roadside help that hasn't actually happened yet. This
-// mirrors orderController.payOrder's verification pattern exactly
-// (verify via Paystack, check status, check amount matches), since
-// there's no reason ride payment should behave differently from order
-// payment on the same backend.
+// This is the actual "request can only be sent once payment succeeds"
+// mechanism: the ride was created in 'awaiting_payment' with no driver
+// ever notified (see createRequest) — only once this verifies a real,
+// successful Paystack charge does the ride flip to 'pending' and
+// actually get dispatched. Mirrors orderController.payOrder's
+// verification pattern (verify via Paystack, check status, check
+// amount matches) since there's no reason ride payment should behave
+// differently from order payment on the same backend.
 const payRide = async (req, res, next) => {
   try {
     const { paymentReference } = req.body;
@@ -604,17 +656,14 @@ const payRide = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Payment reference is required' });
     }
 
-    const ride = await Ride.findById(req.params.id);
+    const ride = await Ride.findById(req.params.id).populate('client', 'name phone pushToken');
     if (!ride) return res.status(404).json({ success: false, message: 'Request not found.' });
 
-    if (ride.client.toString() !== req.user._id.toString()) {
+    if (ride.client._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({ success: false, message: 'You do not have permission to pay for this request' });
     }
-    if (ride.status !== 'completed') {
-      return res.status(400).json({ success: false, message: 'This request has not been completed yet' });
-    }
-    if (ride.paymentStatus === 'paid') {
-      return res.status(400).json({ success: false, message: 'This request has already been paid' });
+    if (ride.status !== 'awaiting_payment') {
+      return res.status(400).json({ success: false, message: 'This request is not awaiting payment.' });
     }
     if (!ride.fare) {
       return res.status(400).json({ success: false, message: 'This request has no fare recorded' });
@@ -650,109 +699,11 @@ const payRide = async (req, res, next) => {
     ride.paymentStatus = 'paid';
     ride.paymentMethod = 'paystack';
     ride.paymentReference = paymentReference;
+    ride.status = 'pending';
     await ride.save();
 
-    if (ride.driver?.driver_id) {
-      await createPayoutEntry({
-        recipient: ride.driver.driver_id,
-        amount: ride.fare,
-        sourceType: 'ride_fare',
-        sourceId: ride._id
-      });
-    }
-
-    return res.status(200).json({ success: true, data: ride });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @route   POST /api/ehailing/request/:id/pay-cash
-// @access  Private (client only, must own the ride)
-// Marks a completed ride as paid by cash — no verification is possible
-// here the way Paystack lets us verify a real transaction, since cash
-// changes hands outside the app entirely. This is a record-keeping
-// action, not a payment-processing one: the client is declaring cash
-// was handed over, not proving it.
-const payCash = async (req, res, next) => {
-  try {
-    const ride = await Ride.findById(req.params.id);
-    if (!ride) return res.status(404).json({ success: false, message: 'Request not found.' });
-
-    if (ride.client.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success: false, message: 'You do not have permission to pay for this request' });
-    }
-    if (ride.status !== 'completed') {
-      return res.status(400).json({ success: false, message: 'This request has not been completed yet' });
-    }
-    if (ride.paymentStatus === 'paid') {
-      return res.status(400).json({ success: false, message: 'This request has already been paid' });
-    }
-    if (!ride.fare) {
-      return res.status(400).json({ success: false, message: 'This request has no fare recorded' });
-    }
-
-    ride.paymentStatus = 'paid';
-    ride.paymentMethod = 'cash';
-    await ride.save();
-
-    // Deliberately no payout entry here, unlike payRide — cash goes
-    // directly from client to driver, in person. The platform never
-    // touches this money, so it owes the driver nothing for it. A
-    // payout entry would incorrectly claim the platform still owes
-    // money it never actually collected.
-
-    // The driver has no way of knowing the client tapped "paid" unless
-    // we tell them — previously this was silent, so the driver never
-    // even saw a prompt to confirm the cash was actually handed over.
-    if (ride.driver?.driver_id) {
-      const driver = await User.findById(ride.driver.driver_id).select('pushToken');
-      if (driver) {
-        sendPushNotifications([driver], {
-          title: 'Client reported cash payment',
-          body: `They say they paid you R${ride.fare} in cash — confirm you received it in your ride history.`,
-          data: { type: 'cash_payment_reported', rideId: ride._id.toString() }
-        });
-      }
-    }
-
-    return res.status(200).json({ success: true, data: ride });
-  } catch (error) {
-    next(error);
-  }
-};
-
-// @route   POST /api/ehailing/request/:id/confirm-cash
-// @access  Private (driver only, must be the assigned driver)
-// body: { received: boolean }  — defaults to true
-// Independent, driver-side acknowledgement that cash was actually
-// received. Does not affect ride.paymentStatus or the client's ability
-// to make new requests (that was already resolved by payCash) — this
-// exists purely so a driver isn't left with no way to confirm, dispute,
-// or have a record of a cash payment they were told about.
-const confirmCashReceived = async (req, res, next) => {
-  try {
-    const { id } = req.params;
-    const received = req.body.received !== false;
-
-    const ride = await Ride.findById(id);
-    if (!ride) return res.status(404).json({ success: false, message: 'Request not found.' });
-    if (!ride.driver?.driver_id || String(ride.driver.driver_id) !== String(req.user._id)) {
-      return res.status(403).json({ success: false, message: "You're not the assigned driver for this request." });
-    }
-    if (ride.paymentMethod !== 'cash') {
-      return res.status(400).json({ success: false, message: 'This request was not paid by cash.' });
-    }
-
-    if (received) {
-      ride.driverCashConfirmed = true;
-      ride.driverCashConfirmedAt = new Date();
-      ride.cashDisputedByDriver = false;
-    } else {
-      ride.driverCashConfirmed = false;
-      ride.cashDisputedByDriver = true;
-    }
-    await ride.save();
+    const io = req.app.get('io');
+    await dispatchToNearbyDrivers(ride, io);
 
     return res.status(200).json({ success: true, data: ride });
   } catch (error) {
@@ -772,7 +723,5 @@ module.exports = {
   cancelRequest,
   getRequest,
   getHistory,
-  payRide,
-  payCash,
-  confirmCashReceived
+  payRide
 };

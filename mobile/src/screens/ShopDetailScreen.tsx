@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Linking } from 'react-native';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
@@ -7,6 +8,7 @@ import * as promotionApi from '../api/promotionApi';
 import * as businessApi from '../api/businessApi';
 import { ShopListing } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import { isPlayableVideoUrl } from '../utils/video';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopDetail'>;
 
@@ -14,6 +16,16 @@ const ShopDetailScreen: React.FC<Props> = ({ navigation, route }) => {
   const { shopId, shopName } = route.params;
   const [hasPromotion, setHasPromotion] = useState(false);
   const [shop, setShop] = useState<ShopListing | null>(null);
+
+  const videoPlayer = useVideoPlayer(null, (player) => {
+    player.loop = false;
+  });
+
+  useEffect(() => {
+    if (shop?.profileVideoUrl && isPlayableVideoUrl(shop.profileVideoUrl)) {
+      videoPlayer.replace(shop.profileVideoUrl);
+    }
+  }, [shop?.profileVideoUrl]);
 
   useEffect(() => {
     promotionApi
@@ -64,9 +76,15 @@ const ShopDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         )}
 
         {!!shop?.profileVideoUrl && (
-          <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(shop.profileVideoUrl!)}>
-            <Text style={styles.videoLinkText}>▶ Watch video</Text>
-          </TouchableOpacity>
+          isPlayableVideoUrl(shop.profileVideoUrl) ? (
+            <View style={styles.videoPreviewWrap}>
+              <VideoView player={videoPlayer} style={styles.videoPreview} contentFit="cover" allowsFullscreen nativeControls />
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(shop.profileVideoUrl!)}>
+              <Text style={styles.videoLinkText}>▶ Watch video</Text>
+            </TouchableOpacity>
+          )
         )}
 
         {!!shop?.portfolioImages?.length && (
@@ -154,6 +172,8 @@ const styles = StyleSheet.create({
   qualificationsTitle: { color: colors.textPrimary, fontWeight: '700', fontSize: 13, marginBottom: 6 },
   qualificationsText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
   videoLink: { marginBottom: spacing.md },
+  videoPreviewWrap: { width: '100%', marginBottom: spacing.md },
+  videoPreview: { width: '100%', height: 200, borderRadius: radius.lg, backgroundColor: colors.surface },
   videoLinkText: { color: colors.accent, fontWeight: '700', fontSize: 13.5 },
   portfolioSection: { width: '100%', marginBottom: spacing.lg },
   portfolioGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },

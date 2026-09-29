@@ -1,19 +1,27 @@
 import React, { useEffect, useState } from "react";
-import { View, ActivityIndicator, StyleSheet, Text, TouchableOpacity } from "react-native";
-import { showAlert } from '../utils/crossPlatformAlert';
+import { View, ActivityIndicator, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from "../context/AuthContext";
-import { getRequest, payRide, payCash } from "../api/ehailingApi";
+import { getRequest, payRide } from "../api/ehailingApi";
 import { Ride } from "../types/ehailing";
 import PaystackCheckout from "../components/PaystackCheckout";
 import { getPaystackPublicKey } from "../utils/paystackConfig";
+import { showAlert } from '../utils/crossPlatformAlert';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'RidePayment'>;
 
 const escapeForJs = (value: string) => value.replace(/'/g, "\\'");
 
+// Card only, and this now runs BEFORE a job ever gets dispatched to a
+// driver — not after it's completed. That's the actual mechanism
+// behind "a request can only be sent once payment is successful": no
+// driver is ever notified about a ride until payRide below confirms a
+// real, verified charge (see ehailingController.createRequest/payRide).
+// Cash payment for e-hailing has been removed entirely — it couldn't
+// be verified the way a Paystack reference can, and paying upfront
+// removes the reason it existed in the first place.
 export default function RidePaymentScreen({ navigation, route }: Props) {
   const { rideId } = route.params;
   const { user } = useAuth();
@@ -21,8 +29,6 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
   const [ride, setRide] = useState<Ride | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinalizing, setIsFinalizing] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash' | null>(null);
-  const [isPayingCash, setIsPayingCash] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -58,20 +64,14 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
     );
   }
 
-  if (ride.status !== 'completed') {
+  if (ride.status !== 'awaiting_payment') {
     return (
       <SafeAreaView style={styles.center}>
         <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24 }}>
-          This request hasn't been completed yet.
+          {ride.paymentStatus === 'paid'
+            ? 'This request has already been paid — your driver has been notified.'
+            : 'This request is no longer awaiting payment.'}
         </Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (ride.paymentStatus === 'paid') {
-    return (
-      <SafeAreaView style={styles.center}>
-        <Text style={{ color: "white" }}>This request has already been paid.</Text>
       </SafeAreaView>
     );
   }
@@ -89,55 +89,6 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
       <SafeAreaView style={styles.center}>
         <ActivityIndicator size="large" color="#F97316" />
         <Text style={{ color: "white", marginTop: 10 }}>Confirming your payment...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  const handlePayCash = () => {
-    showAlert(
-      'Pay by cash',
-      `Confirm you've handed over R${ride.fare!.toFixed(2)} in cash to the driver directly. This just records it in the app — the payment itself already happened outside it.`,
-      [
-        { text: 'Not yet' },
-        {
-          text: 'Confirm',
-          onPress: async () => {
-            setIsPayingCash(true);
-            try {
-              await payCash(rideId);
-              navigation.replace('EHailingHistory');
-            } catch (error: any) {
-              setIsPayingCash(false);
-              showAlert('Error', error?.response?.data?.message || 'Could not record cash payment. Please try again.');
-            }
-          },
-        },
-      ]
-    );
-  };
-
-  if (isPayingCash) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <ActivityIndicator size="large" color="#F97316" />
-        <Text style={{ color: "white", marginTop: 10 }}>Recording your payment...</Text>
-      </SafeAreaView>
-    );
-  }
-
-  if (!paymentMethod) {
-    return (
-      <SafeAreaView style={styles.center}>
-        <Text style={styles.choiceTitle}>R{ride.fare!.toFixed(2)} due</Text>
-        <Text style={styles.choiceSubtitle}>How would you like to pay?</Text>
-
-        <TouchableOpacity style={styles.choiceButton} onPress={() => setPaymentMethod('card')}>
-          <Text style={styles.choiceButtonText}>Pay with Card</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.choiceButton, styles.choiceButtonOutline]} onPress={handlePayCash}>
-          <Text style={[styles.choiceButtonText, styles.choiceButtonTextOutline]}>Pay Cash</Text>
-        </TouchableOpacity>
       </SafeAreaView>
     );
   }
@@ -194,14 +145,23 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
 
   const handleMessage = async (data: string) => {
     if (data === "cancel") {
-      setPaymentMethod(null);
+      // Backing out of payment leaves the ride sitting in
+      // 'awaiting_payment' — nothing was ever dispatched, so there's
+      // nothing to clean up beyond letting the client go back to
+      // either retry or cancel the request outright from there.
+      navigation.goBack();
       return;
     }
 
     setIsFinalizing(true);
     try {
       await payRide(rideId, data);
-      navigation.replace("EHailingHistory");
+      // This is the moment the request actually gets sent to nearby
+      // drivers (see payRide) — resuming into EHailingClient picks up
+      // the now-'pending' ride and shows live "searching for driver"
+      // tracking immediately, the same screen used for the rest of the
+      // ride's lifecycle.
+      navigation.replace('EHailingClient', { resumeRideId: rideId });
     } catch (error: any) {
       console.error(error);
       setIsFinalizing(false);
@@ -229,21 +189,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 24,
   },
-  choiceTitle: { color: "white", fontSize: 28, fontWeight: "800", marginBottom: 6 },
-  choiceSubtitle: { color: "#9CA3AF", fontSize: 15, marginBottom: 28 },
-  choiceButton: {
-    backgroundColor: "#F97316",
-    borderRadius: 10,
-    paddingVertical: 15,
-    alignItems: "center",
-    width: "100%",
-    marginBottom: 12,
-  },
-  choiceButtonOutline: {
-    backgroundColor: "transparent",
-    borderWidth: 1.5,
-    borderColor: "#F97316",
-  },
-  choiceButtonText: { color: "white", fontSize: 16, fontWeight: "700" },
-  choiceButtonTextOutline: { color: "#F97316" },
 });

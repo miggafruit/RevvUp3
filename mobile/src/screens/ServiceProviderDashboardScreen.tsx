@@ -8,6 +8,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import NotificationBell from '../components/NotificationBell';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ServiceProviderDashboard'>;
 
@@ -77,8 +78,13 @@ const ServiceProviderDashboardScreen: React.FC<Props> = ({ navigation }) => {
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Service Provider Dashboard</Text>
-        <Text style={styles.subtitle}>Welcome, {user?.businessName || user?.name}</Text>
+        <View style={styles.headerRow}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Service Provider Dashboard</Text>
+            <Text style={styles.subtitle}>Welcome, {user?.businessName || user?.name}</Text>
+          </View>
+          <NotificationBell />
+        </View>
 
         <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('MyServices')}>
           <Text style={styles.bigCardEmoji}>🛠️</Text>
@@ -155,6 +161,7 @@ const ServiceProviderDashboardScreen: React.FC<Props> = ({ navigation }) => {
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.lg, paddingBottom: spacing.xxl },
+  headerRow: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between' },
   title: { ...typography.title, color: colors.textPrimary, marginBottom: 4 },
   subtitle: { color: colors.textSecondary, fontSize: 14, marginBottom: spacing.xl },
   bigCard: {
