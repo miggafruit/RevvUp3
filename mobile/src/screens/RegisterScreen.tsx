@@ -47,7 +47,6 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [businessName, setBusinessName] = useState('');
-  const [businessAddress, setBusinessAddress] = useState('');
   const [category, setCategory] = useState('');
   const [kycDocuments, setKycDocuments] = useState<KycDocument[]>([]);
   const [providerType, setProviderType] = useState<'individual' | 'business'>('individual');
@@ -87,7 +86,6 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
     if (password.length < 6) return 'Password must be at least 6 characters';
     if (password !== confirmPassword) return 'Passwords do not match';
     if (isBusiness && !businessName.trim()) return 'Please enter your business name';
-    if (isBusiness && !businessAddress.trim()) return 'Please enter your business address';
     if (canOfferDispatchWork && offersDispatchWork) {
       if (!vehicleMake.trim() || !vehicleModel.trim() || !licensePlate.trim()) {
         return "Please add your vehicle's make, model, and license plate — clients need to know what to look for.";
@@ -114,7 +112,6 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
       ...(isBusiness
         ? {
             businessName: businessName.trim(),
-            businessAddress: businessAddress.trim(),
             category: category.trim() || undefined
           }
         : {}),
@@ -153,7 +150,12 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
     setIsSubmitting(true);
     try {
       const user = await register(payload);
-      navigateToDashboard(user.role);
+      // Shops and providers confirm a Google-verified address right away.
+      if (user.role === 'shop' || user.role === 'service_provider') {
+        navigation.reset({ index: 0, routes: [{ name: 'BusinessAddress', params: { firstTime: true } }] });
+      } else {
+        navigateToDashboard(user.role);
+      }
     } catch (error: any) {
       const message =
         error?.response?.data?.message || 'Something went wrong while creating your account';
@@ -209,14 +211,6 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                 onChangeText={setBusinessName}
                 placeholder={role === 'shop' ? 'e.g. AutoParts Pro' : 'e.g. Mike\'s Mechanics'}
                 autoCapitalize="words"
-              />
-
-              <Text style={styles.label}>Business Address</Text>
-              <TextInput placeholderTextColor={colors.textMuted}
-                style={styles.input}
-                value={businessAddress}
-                onChangeText={setBusinessAddress}
-                placeholder="123 Main Street, City"
               />
 
               <Text style={styles.label}>

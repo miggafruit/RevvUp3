@@ -57,6 +57,7 @@ import RewardsScreen from '../screens/RewardsScreen';
 import RewardsProgramScreen from '../screens/RewardsProgramScreen';
 import EarningsScreen from '../screens/EarningsScreen';
 import EditBusinessProfileScreen from '../screens/EditBusinessProfileScreen';
+import BusinessAddressScreen from '../screens/BusinessAddressScreen';
 
 // promotions
 import PromotionsScreen from '../screens/PromotionsScreen';
@@ -157,6 +158,7 @@ const RootNavigator: React.FC = () => {
         <Stack.Screen name="RewardsProgram" component={RewardsProgramScreen} />
         <Stack.Screen name="Earnings" component={EarningsScreen} />
         <Stack.Screen name="EditBusinessProfile" component={EditBusinessProfileScreen} />
+        <Stack.Screen name="BusinessAddress" component={BusinessAddressScreen} />
 
         {/* Promotions */}
         <Stack.Screen name="Promotions" component={PromotionsScreen} />

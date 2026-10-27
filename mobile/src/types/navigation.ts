@@ -34,6 +34,7 @@ export type RootStackParamList = {
   RewardsProgram: undefined;
   Earnings: undefined;
   EditBusinessProfile: undefined;
+  BusinessAddress: { firstTime?: boolean } | undefined;
 
   IncomingDeliveries: undefined;
   DeliveryTracking: { orderId: string };

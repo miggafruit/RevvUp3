@@ -107,6 +107,16 @@ const reviewKyc = async (req, res, next) => {
       }
     }
 
+    // Shops and business providers must have picked a Google-verified
+    // address (pickup point for deliveries, location for at-provider jobs).
+    if (status === 'approved' && (user.role === 'shop' || (user.role === 'service_provider' && user.providerType === 'business'))) {
+      if (!user.businessAddress || !user.addressVerified) {
+        return res.status(400).json({
+          message: 'This account has not set a verified business address yet — ask them to pick their address in the app before approving.'
+        });
+      }
+    }
+
     // Police clearance gate: individuals and every driver can't be approved
     // until an admin has actually read the certificate and confirmed it.
     if (status === 'approved' && requiresPoliceClearance(user)) {

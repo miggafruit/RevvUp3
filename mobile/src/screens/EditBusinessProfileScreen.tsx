@@ -226,6 +226,18 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
       </View>
 
       <ScrollView contentContainerStyle={styles.container}>
+        <TouchableOpacity
+          style={{ borderWidth: 1, borderColor: colors.accent, borderRadius: 12, padding: 12, marginBottom: spacing.md }}
+          onPress={() => navigation.navigate('BusinessAddress')}
+        >
+          <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>
+            📍 Business address {user?.addressVerified ? '✅' : '(not confirmed)'}
+          </Text>
+          <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+            {user?.businessAddress || 'Tap to set your address'}
+          </Text>
+        </TouchableOpacity>
+
         <Text style={styles.sectionTitle}>{copy.photoLabel}</Text>
         <TouchableOpacity style={styles.photoPicker} onPress={handlePickProfilePhoto} disabled={isPickingPhoto}>
           {isPickingPhoto ? (

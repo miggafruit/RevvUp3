@@ -38,11 +38,14 @@ const getDeliveryQuote = async ({ productLines, shopId, deliveryAddress }) => {
   // fall in Tier 1 rather than blocking the order.
   const totalWeightKg = productLines.reduce((sum, l) => sum + (l.product.weightKg || 0) * l.quantity, 0);
 
-  const shop = await User.findById(shopId).select('businessAddress');
+  const shop = await User.findById(shopId).select('businessAddress businessCoords addressVerified');
   if (!shop?.businessAddress) throw new QuoteError('This shop has no pickup address set, so delivery cannot be priced.');
 
   try {
-    const [from, to] = await Promise.all([geocode(shop.businessAddress), geocode(deliveryAddress)]);
+    const shopCoords = shop.addressVerified && shop.businessCoords?.latitude != null
+      ? { latitude: shop.businessCoords.latitude, longitude: shop.businessCoords.longitude }
+      : null;
+    const [from, to] = await Promise.all([shopCoords || geocode(shop.businessAddress), geocode(deliveryAddress)]);
     const { distanceKm } = await getDistanceAndDuration(from, to);
     const rounded = Math.round(distanceKm * 10) / 10;
     const calc = calculateDeliveryFee(totalWeightKg, rounded);

@@ -49,6 +49,13 @@ const userSchema = new mongoose.Schema(
       type: String,
       trim: true
     },
+    // Set when the address was picked from Google's suggestions, so the
+    // coordinates are exact. Used for delivery pricing and driver dispatch.
+    businessCoords: {
+      latitude: { type: Number, min: -90, max: 90 },
+      longitude: { type: Number, min: -180, max: 180 }
+    },
+    addressVerified: { type: Boolean, default: false },
     category: {
       type: String,
       trim: true
@@ -251,14 +258,10 @@ userSchema.pre('validate', function (next) {
       }));
       hasError = true;
     }
-    if (!this.businessAddress) {
-      err.addError('businessAddress', new mongoose.Error.ValidatorError({
-        message: 'Business address is required for this account type',
-        path: 'businessAddress',
-        value: this.businessAddress
-      }));
-      hasError = true;
-    }
+    // businessAddress is NOT required at signup any more: shops and
+    // business providers pick a Google-verified address right after
+    // registering (see PATCH /auth/profile). Admin approval is blocked
+    // until it is set, so no approved seller is ever without one.
 
     if (hasError) return next(err);
   }
@@ -299,6 +302,8 @@ userSchema.methods.toSafeObject = function () {
     role: this.role,
     businessName: this.businessName,
     businessAddress: this.businessAddress,
+    businessCoords: this.businessCoords && this.businessCoords.latitude != null ? { latitude: this.businessCoords.latitude, longitude: this.businessCoords.longitude } : undefined,
+    addressVerified: !!this.addressVerified,
     category: this.category,
     profilePhoto: this.profilePhoto,
     qualifications: this.qualifications,

@@ -32,6 +32,7 @@ export const getCurrentUser = async (): Promise<User> => {
 export interface UpdateProfilePayload {
   businessName?: string;
   businessAddress?: string;
+  businessCoords?: { latitude: number; longitude: number };
   category?: string;
   isDriver?: boolean;
   roadsideServices?: string[];

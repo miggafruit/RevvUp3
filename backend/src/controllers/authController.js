@@ -259,6 +259,7 @@ const updateProfile = async (req, res, next) => {
     const {
       businessName,
       businessAddress,
+      businessCoords,
       category,
       isDriver,
       roadsideServices,
@@ -273,7 +274,22 @@ const updateProfile = async (req, res, next) => {
     const user = req.user;
 
     if (businessName !== undefined) user.businessName = businessName;
-    if (businessAddress !== undefined) user.businessAddress = businessAddress;
+    if (businessAddress !== undefined) {
+      const text = typeof businessAddress === 'string' ? businessAddress.trim() : '';
+      const lat = Number(businessCoords?.latitude);
+      const lng = Number(businessCoords?.longitude);
+      const coordsOk = businessCoords && Number.isFinite(lat) && Number.isFinite(lng) &&
+        Math.abs(lat) <= 90 && Math.abs(lng) <= 180 && !(lat === 0 && lng === 0);
+      user.businessAddress = text;
+      if (coordsOk && text) {
+        user.businessCoords = { latitude: lat, longitude: lng };
+        user.addressVerified = true;
+      } else {
+        // Typed without picking a suggestion: keep the text but it is not verified.
+        user.businessCoords = undefined;
+        user.addressVerified = false;
+      }
+    }
     if (category !== undefined) user.category = category;
 
     // Public-facing profile content — a photo, a qualifications/bio

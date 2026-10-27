@@ -6,6 +6,7 @@ import type { RootStackParamList } from '../types/navigation';
 import { useAuth } from '../context/AuthContext';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import NotificationBell from '../components/NotificationBell';
+import AddressBanner from '../components/AddressBanner';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopDashboard'>;
 
@@ -27,6 +28,8 @@ const ShopDashboardScreen: React.FC<Props> = ({ navigation }) => {
           </View>
           <NotificationBell />
         </View>
+
+        <AddressBanner onPress={() => navigation.navigate('BusinessAddress')} />
 
         <TouchableOpacity style={[styles.bigCard, { borderColor: colors.success, borderWidth: 2 }]} onPress={() => navigation.navigate('Earnings')}>
           <Text style={styles.bigCardEmoji}>💰</Text>

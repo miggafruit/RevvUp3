@@ -31,6 +31,8 @@ export interface User {
   role: UserRole;
   businessName?: string;
   businessAddress?: string;
+  businessCoords?: { latitude: number; longitude: number };
+  addressVerified?: boolean;
   category?: string;
   profilePhoto?: string;
   qualifications?: string;
