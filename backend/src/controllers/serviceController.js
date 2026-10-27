@@ -1,6 +1,8 @@
 const Service = require('../models/Service');
 const User = require('../models/User');
+const { visibleProviderFilter } = require('../utils/sellerVisibility');
 const mongoose = require('mongoose');
+const { activeRewardsSellerIds, rankedPage, splitBySeller, isActiveDoc } = require('../utils/rewardsRanking');
 
 // @route   POST /api/services
 // @access  Private (service_provider only)
@@ -46,7 +48,10 @@ const updateService = async (req, res, next) => {
     });
 
     await service.save();
-    res.status(200).json({ service });
+    const serviceOut = service.toObject();
+    serviceOut.sellerRewardsActive = isActiveDoc(service.provider);
+    if (serviceOut.provider) delete serviceOut.provider.rewardsProgram;
+    res.status(200).json({ service: serviceOut });
   } catch (error) {
     next(error);
   }
@@ -97,7 +102,7 @@ const getServices = async (req, res, next) => {
     // Same fix as productController.getProducts — only surface services
     // from providers who've actually passed KYC, instead of every
     // service_provider account being publicly bookable immediately.
-    const verifiedProviderIds = await User.find({ role: 'service_provider', kycStatus: 'approved' }).distinct('_id');
+    const verifiedProviderIds = await User.find(visibleProviderFilter()).distinct('_id');
 
     if (provider) {
       if (!mongoose.Types.ObjectId.isValid(provider)) {
@@ -122,15 +127,46 @@ const getServices = async (req, res, next) => {
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
 
-    const [services, total] = await Promise.all([
-      Service.find(query)
-        .select('-specs -description -images')
-        .sort({ createdAt: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .populate('provider', 'businessName businessAddress'),
-      Service.countDocuments(query)
-    ]);
+    let services;
+    let total;
+    if (typeof query.provider === 'string') {
+      const single = await Promise.all([
+        Service.find(query)
+          .select('-specs -description -images')
+          .sort({ createdAt: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .populate('provider', 'businessName businessAddress rewardsProgram'),
+        Service.countDocuments(query)
+      ]);
+      services = single[0].map((s) => ({ doc: s, rewardsActive: isActiveDoc(s.provider) }));
+      total = single[1];
+    } else {
+      const rewardIds = await activeRewardsSellerIds();
+      const { filterA, filterB } = splitBySeller(query, 'provider', rewardIds);
+      const result = await rankedPage({
+        runFind: (f, skip, lim) =>
+          Service.find(f)
+            .select('-specs -description -images')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(lim)
+            .populate('provider', 'businessName businessAddress'),
+        runCount: (f) => Service.countDocuments(f),
+        filterA,
+        filterB,
+        skip: (pageNum - 1) * limitNum,
+        limit: limitNum
+      });
+      services = result.items;
+      total = result.total;
+    }
+    services = services.map(({ doc, rewardsActive }) => {
+      const out = doc.toObject();
+      out.sellerRewardsActive = rewardsActive;
+      if (out.provider) delete out.provider.rewardsProgram;
+      return out;
+    });
 
     res.status(200).json({
       services,
@@ -147,10 +183,14 @@ const getServiceById = async (req, res, next) => {
   try {
     const service = await Service.findById(req.params.id).populate(
       'provider',
-      'businessName businessAddress phone kycStatus'
+      'businessName businessAddress phone kycStatus rewardsProgram'
     );
 
-    if (!service || !service.isActive || service.provider?.kycStatus !== 'approved') {
+    // Approved AND (where required) holding a valid verified police clearance.
+    const providerVisible = service?.provider
+      ? await User.exists({ _id: service.provider._id, ...visibleProviderFilter() })
+      : null;
+    if (!service || !service.isActive || !providerVisible) {
       return res.status(404).json({ message: 'Service not found' });
     }
 

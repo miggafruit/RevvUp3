@@ -32,7 +32,7 @@ const deliverySchema = new mongoose.Schema(
     totalAmount: { type: Number, required: true },
     status: {
       type: String,
-      enum: ['pending', 'accepted', 'picked_up', 'delivered', 'cancelled'],
+      enum: ['pending', 'accepted', 'picked_up', 'delivered', 'return_to_shop', 'returned', 'cancelled'],
       default: 'pending'
     },
     driver: {
@@ -45,11 +45,25 @@ const deliverySchema = new mongoose.Schema(
         longitude: Number
       }
     },
+    // Proof-of-delivery code. The CLIENT sees it; the driver never does and
+    // must ask the client for it. select:false + the toJSON transform below
+    // mean it can never leak through a normal query or a socket payload.
+    deliveryCode: { type: String, select: false },
+    codeAttempts: { type: Number, default: 0 },
+    returnRequestedAt: Date,
+    returnedAt: Date,
     acceptedAt: Date,
     pickedUpAt: Date,
     deliveredAt: Date
   },
   { timestamps: true }
 );
+
+deliverySchema.set('toJSON', {
+  transform: (doc, ret) => {
+    delete ret.deliveryCode;
+    return ret;
+  }
+});
 
 module.exports = mongoose.model('Delivery', deliverySchema);

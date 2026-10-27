@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
+const { requiresPoliceClearance, hasValidClearance } = require('../config/clearance');
 const { VALID_ROADSIDE_SERVICES } = require('../config/roadsideServices');
 
 // 'admin' is deliberately NOT in authController.js's own registration
@@ -191,6 +192,7 @@ const userSchema = new mongoose.Schema(
             'drivers_license',
             'business_registration',
             'vehicle_registration',
+            'police_clearance',
             'other'
           ],
           required: true
@@ -200,6 +202,26 @@ const userSchema = new mongoose.Schema(
         uploadedAt: { type: Date, default: Date.now }
       }
     ],
+    // Client rewards balance, in whole points (see config/rewards.js).
+    rewardPoints: { type: Number, default: 0, min: 0 },
+    // Shops/providers: active while activeUntil is in the future (R150/month).
+    rewardsProgram: {
+      activeUntil: { type: Date }
+    },
+    // 'individual' (default, also assumed for older accounts) or 'business'.
+    // Individuals and all drivers need a verified police clearance
+    // (see config/clearance.js).
+    providerType: {
+      type: String,
+      enum: ['individual', 'business'],
+      default: 'individual'
+    },
+    policeClearance: {
+      issuedOn: { type: Date },
+      referenceNumber: { type: String, trim: true },
+      verifiedAt: { type: Date },
+      verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
+    },
     kycStatus: {
       type: String,
       enum: ['not_submitted', 'pending', 'approved', 'rejected'],
@@ -288,6 +310,13 @@ userSchema.methods.toSafeObject = function () {
     isOnline: this.isOnline,
     isAvailable: this.isAvailable,
     waiverAccepted: this.waiverAccepted,
+    providerType: this.providerType,
+    rewardPoints: this.rewardPoints || 0,
+    rewardsActive: !!(this.rewardsProgram?.activeUntil && this.rewardsProgram.activeUntil > new Date()),
+    rewardsActiveUntil: this.rewardsProgram?.activeUntil,
+    policeClearanceRequired: requiresPoliceClearance(this),
+    policeClearanceValid: hasValidClearance(this),
+    policeClearanceIssuedOn: this.policeClearance?.issuedOn,
     kycStatus: this.kycStatus,
     kycReviewNote: this.kycReviewNote,
     kycDocumentCount: this.kycDocuments?.length || 0,

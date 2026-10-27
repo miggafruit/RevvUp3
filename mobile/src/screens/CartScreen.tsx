@@ -135,10 +135,10 @@ const CartScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.totalLabel}>Subtotal</Text>
               <Text style={{ color: colors.textPrimary, fontSize: 14 }}>R {subtotal.toLocaleString()}</Text>
             </View>
-            {deliveryFee > 0 && (
+            {cart.items.some((i) => i.itemType === 'product') && (
               <View style={styles.totalRow}>
                 <Text style={styles.totalLabel}>Delivery</Text>
-                <Text style={{ color: colors.textPrimary, fontSize: 14 }}>R {deliveryFee.toLocaleString()}</Text>
+                <Text style={{ color: colors.textMuted, fontSize: 13 }}>Calculated at checkout</Text>
               </View>
             )}
             <View style={styles.totalRow}>

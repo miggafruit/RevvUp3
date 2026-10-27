@@ -11,6 +11,7 @@ import { useAuth } from '../context/AuthContext';
 import { useCart } from '../context/CartContext';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import NotificationBell from '../components/NotificationBell';
+import PointsCard from '../components/PointsCard';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ClientDashboard'>;
 
@@ -98,6 +99,9 @@ const ClientDashboardScreen: React.FC<Props> = ({ navigation }) => {
             </TouchableOpacity>
           </View>
         </View>
+
+        {/* REWARD POINTS */}
+        <PointsCard onPress={() => navigation.navigate('Rewards')} />
 
         {/* HERO */}
         <ImageBackground

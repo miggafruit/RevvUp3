@@ -30,6 +30,9 @@ export type RootStackParamList = {
   PartInquiries: undefined;
   MyInquiries: undefined;
   Notifications: undefined;
+  Rewards: undefined;
+  RewardsProgram: undefined;
+  Earnings: undefined;
   EditBusinessProfile: undefined;
 
   IncomingDeliveries: undefined;

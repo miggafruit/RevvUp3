@@ -49,6 +49,13 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api', apiLimiter);
 
+// Tells the app whether to show the temporary "Test payment" button for the
+// logged-in user. Always false unless the server has test payments switched on
+// AND this user's email is on the allowlist (see utils/testPayments.js).
+app.get('/api/payments/test-mode', require('./middleware/authMiddleware').protect, (req, res) => {
+  res.json({ enabled: require('./utils/testPayments').isTestPaymentAllowedFor(req.user) });
+});
+
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/services', serviceRoutes);
@@ -64,6 +71,8 @@ app.use('/api/ratings', ratingRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/rewards', require('./routes/rewardsRoutes'));
+app.use('/api/earnings', require('./routes/earningsRoutes'));
 
 app.use(notFound);
 // Reports thrown/passed-to-next(err) errors to Sentry (no-ops if

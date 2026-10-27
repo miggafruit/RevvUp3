@@ -7,6 +7,8 @@ import { useAuth } from "../context/AuthContext";
 import { getRequest, payRide } from "../api/ehailingApi";
 import { Ride } from "../types/ehailing";
 import PaystackCheckout from "../components/PaystackCheckout";
+import TestPaymentChooser from "../components/TestPaymentChooser";
+import { isTestPaymentEnabled, makeTestReference } from "../api/testPaymentApi";
 import { getPaystackPublicKey } from "../utils/paystackConfig";
 import { showAlert } from '../utils/crossPlatformAlert';
 
@@ -29,6 +31,12 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
   const [ride, setRide] = useState<Ride | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [testEnabled, setTestEnabled] = useState<boolean | null>(null);
+  const [useCard, setUseCard] = useState(false);
+
+  useEffect(() => {
+    isTestPaymentEnabled().then(setTestEnabled);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -47,7 +55,7 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
     };
   }, [rideId]);
 
-  if (isLoading) {
+  if (isLoading || testEnabled === null) {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator size="large" color="#F97316" />
@@ -90,6 +98,16 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
         <ActivityIndicator size="large" color="#F97316" />
         <Text style={{ color: "white", marginTop: 10 }}>Confirming your payment...</Text>
       </SafeAreaView>
+    );
+  }
+
+  if (testEnabled && !useCard) {
+    return (
+      <TestPaymentChooser
+        amountLabel={`R ${ride.fare}`}
+        onPayWithCard={() => setUseCard(true)}
+        onTestPay={() => handleMessage(makeTestReference())}
+      />
     );
   }
 
@@ -143,7 +161,7 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
   </html>
   `;
 
-  const handleMessage = async (data: string) => {
+  async function handleMessage(data: string) {
     if (data === "cancel") {
       // Backing out of payment leaves the ride sitting in
       // 'awaiting_payment' — nothing was ever dispatched, so there's
@@ -172,7 +190,7 @@ export default function RidePaymentScreen({ navigation, route }: Props) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     }
-  };
+  }
 
   return (
     <SafeAreaView style={{ flex: 1 }}>

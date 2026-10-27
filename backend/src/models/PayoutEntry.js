@@ -16,11 +16,16 @@ const payoutEntrySchema = new mongoose.Schema(
       required: true,
       index: true
     },
+    // Signed: positive = RevvUp owes the recipient; negative = the recipient
+    // owes RevvUp (e.g. the 8% commission on a job paid in cash, which the
+    // provider collected themselves).
     amount: {
       type: Number,
-      required: true,
-      min: 0
+      required: true
     },
+    // Cash the recipient already collected directly from the client for this
+    // source. 0 / absent for card payments.
+    cashHeld: { type: Number },
     // Only set when a commission was actually deducted (see
     // config/commission.js) — lets the ledger show its work: amount +
     // platformCut should always reconcile back to the original gross
@@ -31,7 +36,7 @@ const payoutEntrySchema = new mongoose.Schema(
     // the actual ride/order it came from, not just a bare number.
     sourceType: {
       type: String,
-      enum: ['ride_fare', 'order_seller_share', 'delivery_fee'],
+      enum: ['ride_fare', 'order_seller_share', 'delivery_fee', 'cash_settlement'],
       required: true
     },
     sourceId: {

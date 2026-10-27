@@ -57,6 +57,12 @@ connectDB().then(() => {
   server.listen(PORT, '0.0.0.0',() => {
     console.log(`Server running on port ${PORT}`);
 
+    if (require('./utils/testPayments').isTestPaymentsEnabled()) {
+      console.warn('⚠️  TEST PAYMENTS ENABLED for: ' + process.env.TEST_PAYMENT_EMAILS);
+      console.warn('   Those accounts can skip real payment. Remove ALLOW_TEST_PAYMENTS and');
+      console.warn('   TEST_PAYMENT_EMAILS from the environment before going live.');
+    }
+
     if (process.env.MATCHING_TEST_MODE === 'true') {
       console.warn('');
       console.warn('⚠️  ⚠️  ⚠️   MATCHING_TEST_MODE IS ON  ⚠️  ⚠️  ⚠️');

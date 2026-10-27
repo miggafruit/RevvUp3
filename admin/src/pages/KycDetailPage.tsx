@@ -11,6 +11,7 @@ const KycDetailPage: React.FC = () => {
   const [note, setNote] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [zoomedImage, setZoomedImage] = useState<string | null>(null);
+  const [clearanceChecked, setClearanceChecked] = useState(false);
 
   useEffect(() => {
     if (!userId) return;
@@ -23,7 +24,7 @@ const KycDetailPage: React.FC = () => {
     if (!userId) return;
     setIsSubmitting(true);
     try {
-      await reviewKyc(userId, status, note.trim() || undefined);
+      await reviewKyc(userId, status, note.trim() || undefined, clearanceChecked);
       navigate('/kyc');
     } catch (err: any) {
       setError(err?.response?.data?.message || 'Could not save this review. Try again.');
@@ -39,6 +40,14 @@ const KycDetailPage: React.FC = () => {
     user.bankingDetails?.bankName &&
     user.bankingDetails?.branchCode
   );
+
+  // Mirrors backend config/clearance.js: individuals and every driver need one.
+  const needsClearance =
+    user.role === 'service_provider' &&
+    (user.providerType !== 'business' || !!user.isDriver || (user.roadsideServices?.length ?? 0) > 0);
+  const clearanceDoc = user.kycDocuments.find((d) => d.type === 'police_clearance');
+  const clearanceIssued = user.policeClearance?.issuedOn ? new Date(user.policeClearance.issuedOn) : null;
+  const approveBlocked = needsClearance && (!clearanceDoc || !clearanceIssued || !clearanceChecked);
 
   return (
     <div>
@@ -67,6 +76,25 @@ const KycDetailPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {needsClearance && (
+        <div className="mb-8">
+          <h2 className="text-sm font-semibold text-text-primary mb-2">Police clearance (criminal record check)</h2>
+          <div className="bg-surface border border-border rounded-xl p-4 text-sm text-text-secondary space-y-2">
+            <p>
+              Required because this account is {user.providerType === 'business' ? '' : 'an individual provider and/or '}
+              a driver. Open the certificate above, check it is genuine, in their name, and shows no disqualifying record.
+            </p>
+            <p><span className="text-text-primary font-medium">Certificate uploaded:</span> {clearanceDoc ? 'Yes' : 'NO — cannot approve'}</p>
+            <p><span className="text-text-primary font-medium">Issue date:</span> {clearanceIssued ? clearanceIssued.toLocaleDateString() : 'Not provided'}</p>
+            <p><span className="text-text-primary font-medium">Reference no.:</span> {user.policeClearance?.referenceNumber || '—'}</p>
+            <label className="flex items-start gap-2 pt-2 text-text-primary">
+              <input type="checkbox" checked={clearanceChecked} onChange={(e) => setClearanceChecked(e.target.checked)} className="mt-1" />
+              <span>I have personally checked this police clearance certificate and it is acceptable.</span>
+            </label>
+          </div>
+        </div>
+      )}
 
       <div className="mb-8">
         <h2 className="text-sm font-semibold text-text-primary mb-2">Banking Details</h2>
@@ -101,7 +129,7 @@ const KycDetailPage: React.FC = () => {
       <div className="flex gap-3">
         <button
           onClick={() => handleReview('approved')}
-          disabled={isSubmitting}
+          disabled={isSubmitting || approveBlocked}
           className="flex-1 bg-brand-green text-[#14151A] font-semibold text-sm rounded-lg py-3 hover:opacity-90 transition-opacity disabled:opacity-50"
         >
           Approve

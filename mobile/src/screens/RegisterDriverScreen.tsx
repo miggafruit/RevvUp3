@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import WaiverModal from '../components/WaiverModal';
 import KycUploader from '../components/KycUploader';
+import PoliceClearanceFields, { isValidIsoDate } from '../components/PoliceClearanceFields';
 import PasswordInput from '../components/PasswordInput';
 import { RegisterPayload, KycDocument, BankingDetails } from '../types/auth';
 import { ROADSIDE_SERVICE_OPTIONS } from '../constants/roadsideServices';
@@ -38,6 +39,7 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
   const [licensePlate, setLicensePlate] = useState('');
   const [roadsideServices, setRoadsideServices] = useState<string[]>([]);
   const [kycDocuments, setKycDocuments] = useState<KycDocument[]>([]);
+  const [clearance, setClearance] = useState({ issuedOn: '', referenceNumber: '' });
   const [bankAccountHolder, setBankAccountHolder] = useState('');
   const [bankName, setBankName] = useState('');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
@@ -89,6 +91,9 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
       },
       waiverAccepted: true,
       ...(kycDocuments.length > 0 ? { kycDocuments } : {}),
+      ...(isValidIsoDate(clearance.issuedOn)
+        ? { policeClearance: { issuedOn: clearance.issuedOn, referenceNumber: clearance.referenceNumber.trim() || undefined } }
+        : {}),
       ...(bankAccountHolder.trim() || bankName.trim() || bankAccountNumber.trim() || bankBranchCode.trim()
         ? {
             bankingDetails: {
@@ -244,7 +249,8 @@ const RegisterDriverScreen: React.FC<Props> = ({ navigation }) => {
             Uploading your driver's license and ID helps us verify you faster so you can start
             accepting delivery and roadside jobs sooner.
           </Text>
-          <KycUploader role="service_provider" documents={kycDocuments} onChange={setKycDocuments} showVehicleDocument />
+          <KycUploader role="service_provider" documents={kycDocuments} onChange={setKycDocuments} showVehicleDocument showPoliceClearance />
+          <PoliceClearanceFields value={clearance} onChange={setClearance} />
 
           <Text style={[styles.label, { marginTop: 24 }]}>
             Banking Details <Text style={styles.optional}>(optional — required before approval)</Text>

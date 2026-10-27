@@ -19,6 +19,7 @@ import * as promotionApi from '../api/promotionApi';
 import { ProviderListing } from '../types/marketplace';
 import StarRating from '../components/StarRating';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import RewardsBadge from '../components/RewardsBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProvidersList'>;
 
@@ -98,6 +99,7 @@ const ProvidersListScreen: React.FC<Props> = ({ navigation }) => {
         <Text style={styles.providerName} numberOfLines={1}>
           {item.businessName}
         </Text>
+        {item.rewardsActive && <RewardsBadge />}
         <Text style={styles.providerCategory} numberOfLines={1}>
           {item.category || `${item.serviceCount} services`}
         </Text>

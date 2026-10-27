@@ -259,10 +259,10 @@ const EditBusinessProfileScreen: React.FC<Props> = ({ navigation }) => {
         {isPlayableVideoUrl(profileVideoUrl) && (
           <View style={styles.videoPreviewWrap}>
             <VideoView
-              player={videoPlayer}
+              player={videoPlayer as any}
               style={styles.videoPreview}
               contentFit="cover"
-              allowsFullscreen
+              {...({ allowsFullscreen: true } as any)}
               nativeControls
             />
             <TouchableOpacity

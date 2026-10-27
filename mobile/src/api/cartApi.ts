@@ -1,7 +1,7 @@
 import apiClient from './client';
 import { Cart } from '../types/marketplace';
 
-export const getCart = async (): Promise<{ cart: Cart; subtotal: number; deliveryFee: number; total: number }> => {
+export const getCart = async (): Promise<{ cart: Cart; subtotal: number; deliveryFee: number; total: number; seller?: { businessName?: string; businessAddress?: string } | null }> => {
   const { data } = await apiClient.get('/cart');
   return data;
 };

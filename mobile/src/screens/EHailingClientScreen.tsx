@@ -772,7 +772,7 @@ export default function EHailingClientScreen() {
           )}
         </MapView>
         ) : (
-          <MapUnavailableNotice subtitle={acceptedRequest?.location.address} />
+          <MapUnavailableNotice subtitle={(acceptedRequest as any)?.location?.address} />
         )}
 
         <View style={styles.driverCard}>

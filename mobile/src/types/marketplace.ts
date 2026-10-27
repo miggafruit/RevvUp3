@@ -4,6 +4,7 @@ export interface Spec {
 }
 
 export interface Product {
+  sellerRewardsActive?: boolean;
   _id: string;
   shop: { _id: string; businessName?: string; businessAddress?: string; phone?: string } | string;
   name: string;
@@ -14,6 +15,7 @@ export interface Product {
   images: string[];
   thumbnail?: string | null;
   stock: number;
+  weightKg?: number;
   condition: 'Brand New' | 'Used' | 'Refurbished';
   deliveryEstimate: string;
   isActive: boolean;
@@ -23,6 +25,7 @@ export interface Product {
 }
 
 export interface Service {
+  sellerRewardsActive?: boolean;
   _id: string;
   provider: { _id: string; businessName?: string; businessAddress?: string; phone?: string } | string;
   name: string;
@@ -41,6 +44,7 @@ export interface Service {
 }
 
 export interface ShopListing {
+  rewardsActive?: boolean;
   _id: string;
   name: string;
   businessName: string;
@@ -56,6 +60,7 @@ export interface ShopListing {
 }
 
 export interface ProviderListing {
+  rewardsActive?: boolean;
   _id: string;
   name: string;
   businessName: string;
@@ -100,6 +105,15 @@ export interface Order {
   totalAmount: number;
   deliveryFee?: number;
   deliveryAddress: string;
+  serviceLocationType?: 'at_client' | 'at_provider';
+  paymentMethod?: 'card' | 'cash' | 'points';
+  pointsRedeemed?: number;
+  pointsValue?: number;
+  amountDue?: number;
+  pointsEarned?: number;
+  providerCompletedAt?: string;
+  clientConfirmedAt?: string;
+  finalizedAt?: string;
   contactPhone: string;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   notes?: string;

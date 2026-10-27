@@ -1,3 +1,4 @@
+const { visibleShopFilter } = require('../utils/sellerVisibility');
 const Inquiry = require('../models/Inquiry');
 const User = require('../models/User');
 const { sendPushNotifications } = require('../utils/pushNotifications');
@@ -29,7 +30,7 @@ const createInquiry = async (req, res, next) => {
       });
     }
 
-    const shopUser = await User.findOne({ _id: shop, role: 'shop' });
+    const shopUser = await User.findOne({ _id: shop, ...visibleShopFilter() });
     if (!shopUser) {
       return res.status(404).json({ success: false, message: 'Shop not found.' });
     }

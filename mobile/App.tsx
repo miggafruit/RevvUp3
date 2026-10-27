@@ -5,6 +5,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from './src/context/AuthContext';
 import { CartProvider } from './src/context/CartContext';
 import { EHailingSocketProvider } from './src/context/EHailingSocketContext';
+import { RewardsProvider } from './src/context/RewardsContext';
 import { useNotificationResponseListener } from './src/utils/pushNotifications';
 import { AlertHost } from './src/utils/crossPlatformAlert';
 import RootNavigator from './src/navigation/RootNavigator';
@@ -39,10 +40,12 @@ function App() {
         <AuthProvider>
           <EHailingSocketProvider>
             <CartProvider>
-              <StatusBar style="light" />
-              <RootNavigator />
-              <ConnectionStatusBanner />
-              <AlertHost />
+              <RewardsProvider>
+                <StatusBar style="light" />
+                <RootNavigator />
+                <ConnectionStatusBanner />
+                <AlertHost />
+              </RewardsProvider>
             </CartProvider>
           </EHailingSocketProvider>
         </AuthProvider>

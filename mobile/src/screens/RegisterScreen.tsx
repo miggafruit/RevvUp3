@@ -18,6 +18,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import WaiverModal from '../components/WaiverModal';
 import KycUploader from '../components/KycUploader';
+import PoliceClearanceFields, { isValidIsoDate } from '../components/PoliceClearanceFields';
 import PasswordInput from '../components/PasswordInput';
 import { RegisterPayload, UserRole, KycDocument, BankingDetails } from '../types/auth';
 import { ROADSIDE_SERVICE_OPTIONS } from '../constants/roadsideServices';
@@ -49,6 +50,8 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
   const [businessAddress, setBusinessAddress] = useState('');
   const [category, setCategory] = useState('');
   const [kycDocuments, setKycDocuments] = useState<KycDocument[]>([]);
+  const [providerType, setProviderType] = useState<'individual' | 'business'>('individual');
+  const [clearance, setClearance] = useState({ issuedOn: '', referenceNumber: '' });
   const [bankAccountHolder, setBankAccountHolder] = useState('');
   const [bankName, setBankName] = useState('');
   const [bankAccountNumber, setBankAccountNumber] = useState('');
@@ -63,6 +66,8 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
   const [vehicleModel, setVehicleModel] = useState('');
   const [licensePlate, setLicensePlate] = useState('');
   const offersDispatchWork = offersDelivery || roadsideServices.length > 0;
+  // Individuals and every driver need a police clearance (see backend config/clearance.js).
+  const needsClearance = role === 'service_provider' && (providerType === 'individual' || offersDispatchWork);
 
   const [waiverAccepted, setWaiverAccepted] = useState(false);
   const [waiverModalVisible, setWaiverModalVisible] = useState(false);
@@ -127,6 +132,10 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                 }
               : {})
           }
+        : {}),
+      ...(role === 'service_provider' ? { providerType } : {}),
+      ...(needsClearance && isValidIsoDate(clearance.issuedOn)
+        ? { policeClearance: { issuedOn: clearance.issuedOn, referenceNumber: clearance.referenceNumber.trim() || undefined } }
         : {}),
       ...(isBusiness && kycDocuments.length > 0 ? { kycDocuments } : {}),
       ...(isBusiness && (bankAccountHolder.trim() || bankName.trim() || bankAccountNumber.trim() || bankBranchCode.trim())
@@ -223,6 +232,37 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                     : 'e.g. Mechanic, Panel & Paint, Roadside/Driver'
                 }
               />
+
+              {role === 'service_provider' && (
+                <>
+                  <Text style={[styles.label, { marginTop: 24 }]}>I am registering as</Text>
+                  <View style={{ flexDirection: 'row', gap: 8 }}>
+                    {([['individual', 'An individual'], ['business', 'A registered business']] as const).map(([v, l]) => {
+                      const active = providerType === v;
+                      return (
+                        <TouchableOpacity
+                          key={v}
+                          onPress={() => setProviderType(v)}
+                          style={{
+                            flex: 1,
+                            padding: 12,
+                            borderRadius: 10,
+                            borderWidth: 1,
+                            borderColor: active ? colors.accent : colors.border,
+                            backgroundColor: active ? colors.accent : 'transparent',
+                            alignItems: 'center'
+                          }}
+                        >
+                          <Text style={{ color: active ? '#fff' : colors.textPrimary, fontWeight: '700' }}>{l}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                  <Text style={styles.kycNote}>
+                    Individuals (and anyone who drives) must provide a police clearance certificate.
+                  </Text>
+                </>
+              )}
 
               {canOfferDispatchWork && (
                 <>
@@ -338,7 +378,9 @@ const RegisterScreen: React.FC<Props> = ({ route, navigation }) => {
                 documents={kycDocuments}
                 onChange={setKycDocuments}
                 showVehicleDocument={canOfferDispatchWork && offersDispatchWork}
+                showPoliceClearance={needsClearance}
               />
+              {needsClearance && <PoliceClearanceFields value={clearance} onChange={setClearance} />}
 
               <Text style={[styles.label, { marginTop: 24 }]}>
                 Banking Details <Text style={styles.optional}>(optional — required before approval)</Text>

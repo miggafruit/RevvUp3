@@ -8,6 +8,8 @@ import { useAuth } from "../context/AuthContext";
 import { getOrderById, payOrder } from "../api/orderApi";
 import { Order } from "../types/marketplace";
 import PaystackCheckout from "../components/PaystackCheckout";
+import TestPaymentChooser from "../components/TestPaymentChooser";
+import { isTestPaymentEnabled, makeTestReference } from "../api/testPaymentApi";
 import { getPaystackPublicKey } from "../utils/paystackConfig";
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Payment'>;
@@ -21,6 +23,12 @@ export default function PaymentScreen({ navigation, route }: Props) {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [testEnabled, setTestEnabled] = useState<boolean | null>(null);
+  const [useCard, setUseCard] = useState(false);
+
+  useEffect(() => {
+    isTestPaymentEnabled().then(setTestEnabled);
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -39,7 +47,7 @@ export default function PaymentScreen({ navigation, route }: Props) {
     };
   }, [orderId]);
 
-  if (isLoading) {
+  if (isLoading || testEnabled === null) {
     return (
       <SafeAreaView style={styles.center}>
         <ActivityIndicator size="large" color="#F97316" />
@@ -85,7 +93,46 @@ export default function PaymentScreen({ navigation, route }: Props) {
     );
   }
 
-  const amount = Math.round(order.totalAmount * 100);
+  const amountDue = order.amountDue ?? order.totalAmount;
+
+  if (order.paymentMethod === 'cash') {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24 }}>
+          This is a cash booking — you pay the provider R {amountDue.toFixed(2)} in cash when the work is done.
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (amountDue <= 0) {
+    return (
+      <SafeAreaView style={styles.center}>
+        <Text style={{ color: "white", fontSize: 18, fontWeight: '700', marginBottom: 8 }}>Paid with points ⭐</Text>
+        <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24, marginBottom: 20 }}>
+          Your reward points cover this whole order. Nothing is charged to your card.
+        </Text>
+        <Text
+          onPress={() => handleMessage("")}
+          style={{ color: "#fff", backgroundColor: "#F97316", paddingVertical: 12, paddingHorizontal: 28, borderRadius: 10, overflow: 'hidden', fontWeight: '700' }}
+        >
+          Confirm order
+        </Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (testEnabled && !useCard) {
+    return (
+      <TestPaymentChooser
+        amountLabel={`R ${amountDue}`}
+        onPayWithCard={() => setUseCard(true)}
+        onTestPay={() => handleMessage(makeTestReference())}
+      />
+    );
+  }
+
+  const amount = Math.round(amountDue * 100);
   const payerEmail = user?.email || "customer@example.com";
   const nameParts = (user?.name || "").trim().split(/\s+/).filter(Boolean);
   const firstName = nameParts[0] || "";
@@ -135,7 +182,7 @@ export default function PaymentScreen({ navigation, route }: Props) {
   </html>
   `;
 
-  const handleMessage = async (data: string) => {
+  async function handleMessage(data: string) {
     if (data === "cancel") {
       navigation.goBack();
       return;
@@ -143,8 +190,16 @@ export default function PaymentScreen({ navigation, route }: Props) {
 
     setIsFinalizing(true);
     try {
-      await payOrder(orderId, data);
-      navigation.replace("OrderConfirmation", { orderId });
+      const paidOrder = await payOrder(orderId, data);
+      // Product orders go straight to live tracking, which shows
+      // "Finding a driver…" and updates as soon as one accepts. Service-only
+      // orders have no delivery, so they keep the confirmation screen.
+      const hasProducts = paidOrder?.items?.some((item: any) => item.itemType === "product");
+      if (hasProducts) {
+        navigation.replace("DeliveryTracking", { orderId });
+      } else {
+        navigation.replace("OrderConfirmation", { orderId });
+      }
     } catch (error: any) {
       console.error(error);
       setIsFinalizing(false);
@@ -155,7 +210,7 @@ export default function PaymentScreen({ navigation, route }: Props) {
         [{ text: 'OK', onPress: () => navigation.goBack() }]
       );
     }
-  };
+  }
 
   return (
     <SafeAreaView style={{ flex: 1 }}>

@@ -86,6 +86,22 @@ const ServiceProviderDashboardScreen: React.FC<Props> = ({ navigation }) => {
           <NotificationBell />
         </View>
 
+        <TouchableOpacity style={[styles.bigCard, { borderColor: colors.success, borderWidth: 2 }]} onPress={() => navigation.navigate('Earnings')}>
+          <Text style={styles.bigCardEmoji}>💰</Text>
+          <Text style={styles.bigCardTitle}>Earnings</Text>
+          <Text style={styles.bigCardSubtitle}>Your sales, what you're owed, and your next payout — live</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={[styles.bigCard, user?.rewardsActive && { borderColor: '#FACC15', borderWidth: 2 }]} onPress={() => navigation.navigate('RewardsProgram')}>
+          <Text style={styles.bigCardEmoji}>⭐</Text>
+          <Text style={styles.bigCardTitle}>RevvUp Rewards {user?.rewardsActive ? '· ACTIVE' : ''}</Text>
+          <Text style={styles.bigCardSubtitle}>
+            {user?.rewardsActive
+              ? 'Your REWARDS badge is live — manage or renew'
+              : 'R150/month: REWARDS badge, top of searches, clients earn 2% back'}
+          </Text>
+        </TouchableOpacity>
+
         <TouchableOpacity style={styles.bigCard} onPress={() => navigation.navigate('MyServices')}>
           <Text style={styles.bigCardEmoji}>🛠️</Text>
           <Text style={styles.bigCardTitle}>My Services</Text>

@@ -1,14 +1,54 @@
 const mongoose = require('mongoose');
 const Cart = require('../models/Cart');
+const Delivery = require('../models/Delivery');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { verifyPaystackTransaction } = require('../utils/paystack');
 const { createDeliveryForOrder } = require('./deliveryController');
-const { getDeliveryFee } = require('../config/deliveryPricing');
+const { reservePoints, giveBackPoints, recordRedemption, refundRedemption } = require('../services/rewardsService');
+const { finalizeServiceOrder } = require('../services/orderFinalization');
+const { isRewardsActive, pointsToRand, REDEEMABLE_SELLER_ROLES, round2 } = require('../config/rewards');
+const { isSellerVisible } = require('../utils/sellerVisibility');
+const { getDeliveryQuote, QuoteError } = require('../utils/deliveryQuote');
 const { createPayoutEntry } = require('../utils/payouts');
 const { sendPushNotifications } = require('../utils/pushNotifications');
 const { amountMatchesExpected } = require('../utils/paymentVerification');
+const { isTestReference, isTestPaymentAllowedFor, buildTestVerification } = require('../utils/testPayments');
 const { reportSilentFailure } = require('../utils/reportSilentFailure');
+
+// @route   POST /api/orders/delivery-quote
+// @access  Private (client only)
+// body: { deliveryAddress } — prices delivery for the current cart so the
+// checkout screen can show the real fee BEFORE the order is placed. The
+// same calculation runs again inside checkout(), which is the one that counts.
+const getCheckoutQuote = async (req, res, next) => {
+  try {
+    const { deliveryAddress } = req.body;
+    const cart = await Cart.findOne({ client: req.user._id }).populate('items.product').populate('items.service');
+    if (!cart || cart.items.length === 0) return res.status(400).json({ message: 'Your cart is empty' });
+
+    const subtotal = cart.items.reduce((sum, i) => {
+      const unit = i.itemType === 'product' ? i.product?.price : i.service?.price;
+      return sum + (unit || 0) * i.quantity;
+    }, 0);
+    const productLines = cart.items
+      .filter((i) => i.itemType === 'product' && i.product)
+      .map((i) => ({ product: i.product, quantity: i.quantity }));
+
+    if (productLines.length > 0 && (!deliveryAddress || !deliveryAddress.trim())) {
+      return res.status(400).json({ message: 'Delivery address is required' });
+    }
+    const quote = await getDeliveryQuote({
+      productLines,
+      shopId: productLines[0]?.product.shop,
+      deliveryAddress: (deliveryAddress || '').trim()
+    });
+    res.status(200).json({ ...quote, subtotal, total: Math.round((subtotal + quote.deliveryFee) * 100) / 100 });
+  } catch (err) {
+    if (err instanceof QuoteError) return res.status(err.status).json({ message: err.message });
+    next(err);
+  }
+};
 
 // @route   POST /api/orders/checkout
 // @access  Private (client only)
@@ -17,10 +57,17 @@ const { reportSilentFailure } = require('../utils/reportSilentFailure');
 // only happens once the seller accepts (see payOrder below).
 const checkout = async (req, res, next) => {
   try {
-    const { deliveryAddress, contactPhone, notes } = req.body;
+    let { deliveryAddress } = req.body;
+    const { contactPhone, notes, serviceLocationType, paymentMethod: requestedMethod, redeemPoints } = req.body;
 
-    if (!deliveryAddress || !contactPhone) {
-      return res.status(400).json({ message: 'Delivery address and contact phone are required' });
+    // Meaning of "address" depends on what is being bought:
+    //  - products: where the delivery driver drops the parcel
+    //  - services (at_client): where the vehicle is / where the work happens,
+    //    so the provider knows where to go
+    //  - services (at_provider): the client brings the vehicle to the provider;
+    //    the address is the provider's own, filled in below
+    if (!contactPhone) {
+      return res.status(400).json({ message: 'Contact phone is required' });
     }
 
     const cart = await Cart.findOne({ client: req.user._id })
@@ -61,22 +108,108 @@ const checkout = async (req, res, next) => {
       });
     }
 
+    // Re-check at purchase time: a seller may have been un-approved (or their
+    // clearance lapsed) after the item went into the cart.
+    const sellerIdsToCheck = [...new Set(orderItems.map((i) => i.sellerSnapshot.toString()))];
+    const sellerDocs = await User.find({ _id: { $in: sellerIdsToCheck } }).select(
+      'role kycStatus providerType isDriver roadsideServices policeClearance businessAddress businessName name rewardsProgram'
+    );
+    if (sellerDocs.length !== sellerIdsToCheck.length || sellerDocs.some((u) => !isSellerVisible(u))) {
+      return res.status(400).json({
+        message: 'This seller is not currently available. Please remove their items from your cart.'
+      });
+    }
+
+    const isServiceOrder = !orderItems.some((i) => i.itemType === 'product');
+    let resolvedLocationType;
+    if (isServiceOrder) {
+      resolvedLocationType = serviceLocationType === 'at_provider' ? 'at_provider' : 'at_client';
+      if (resolvedLocationType === 'at_provider') {
+        deliveryAddress = sellerDocs[0]?.businessAddress;
+        if (!deliveryAddress) {
+          return res.status(400).json({ message: 'This provider has no workshop address on file. Choose "come to my vehicle" instead.' });
+        }
+      } else if (!deliveryAddress || !deliveryAddress.trim()) {
+        return res.status(400).json({ message: 'Please tell the provider where the vehicle is (the address the work should happen at).' });
+      }
+    } else if (!deliveryAddress || !deliveryAddress.trim()) {
+      return res.status(400).json({ message: 'Delivery address is required' });
+    }
+
     const subtotal = orderItems.reduce((sum, item) => sum + item.lineTotal, 0);
     const hasProductItems = orderItems.some((item) => item.itemType === 'product');
-    const deliveryFee = getDeliveryFee(hasProductItems);
-    const totalAmount = subtotal + deliveryFee;
+    let quote = { deliveryFee: 0 };
+    if (hasProductItems) {
+      const productLines = cart.items
+        .filter((i) => i.itemType === 'product')
+        .map((i) => ({ product: i.product, quantity: i.quantity }));
+      try {
+        quote = await getDeliveryQuote({
+          productLines,
+          shopId: productLines[0].product.shop,
+          deliveryAddress
+        });
+      } catch (err) {
+        if (err instanceof QuoteError) return res.status(err.status).json({ message: err.message });
+        throw err;
+      }
+    }
+    const deliveryFee = quote.deliveryFee;
+    const totalAmount = Math.round((subtotal + deliveryFee) * 100) / 100;
 
-    const order = await Order.create({
+    // ── Payment method + rewards points ──────────────────────────────────────
+    const seller = sellerDocs[0];
+    if (requestedMethod === 'cash' && !isServiceOrder) {
+      return res.status(400).json({ message: 'Cash is only available for service bookings. Products are paid by card in the app.' });
+    }
+    const pointsRequested = Math.max(0, Math.floor(Number(redeemPoints) || 0));
+    let pointsValue = 0;
+    if (pointsRequested > 0) {
+      if (!isServiceOrder || !REDEEMABLE_SELLER_ROLES.includes(seller.role)) {
+        return res.status(400).json({ message: 'Points can only be used on services from participating providers.' });
+      }
+      if (!isRewardsActive(seller)) {
+        return res.status(400).json({ message: 'This provider is not part of the rewards programme, so points cannot be used here.' });
+      }
+      pointsValue = pointsToRand(pointsRequested);
+      if (pointsValue > totalAmount) {
+        return res.status(400).json({ message: 'You are using more points than this booking costs.' });
+      }
+      const reserved = await reservePoints(req.user._id, pointsRequested);
+      if (!reserved) {
+        return res.status(400).json({ message: "You don't have enough points for that." });
+      }
+    }
+    const amountDue = round2(totalAmount - pointsValue);
+    const paymentMethod = amountDue === 0 ? 'points' : requestedMethod === 'cash' ? 'cash' : 'card';
+
+    let order;
+    try {
+      order = await Order.create({
       client: req.user._id,
       items: orderItems,
       totalAmount,
+      paymentMethod,
+      pointsRedeemed: pointsRequested,
+      pointsValue,
+      amountDue,
+      rewardsEligible: isRewardsActive(seller),
       deliveryFee,
+      deliveryDistanceKm: quote.distanceKm,
+      deliveryTier: quote.tier || undefined,
+      totalWeightKg: quote.totalWeightKg,
       deliveryAddress,
+      serviceLocationType: resolvedLocationType,
       contactPhone,
       notes,
       status: 'pending',
       paymentStatus: 'pending'
-    });
+      });
+    } catch (createError) {
+      await giveBackPoints(req.user._id, pointsRequested);
+      throw createError;
+    }
+    await recordRedemption(order, seller.businessName || seller.name);
 
     // Stock is reserved at submission time (before the seller has even seen
     // it) so two clients can't both order the last unit while one is pending.
@@ -100,7 +233,11 @@ const checkout = async (req, res, next) => {
     const sellers = await User.find({ _id: { $in: sellerIds } }).select('pushToken');
     sendPushNotifications(sellers, {
       title: 'New order received',
-      body: `You have a new order with ${orderItems.length} item${orderItems.length === 1 ? '' : 's'} — open the app to accept or decline.`,
+      body: isServiceOrder
+        ? resolvedLocationType === 'at_provider'
+          ? 'New booking — the client will bring their vehicle to your workshop. Open the app to accept or decline.'
+          : `New booking — the client needs you to come to their vehicle at ${deliveryAddress}. Open the app to accept or decline.`
+        : `You have a new order with ${orderItems.length} item${orderItems.length === 1 ? '' : 's'} — open the app to accept or decline.`,
       data: { type: 'new_order', orderId: order._id.toString() }
     });
 
@@ -129,7 +266,21 @@ const getIncomingOrders = async (req, res, next) => {
       .sort({ createdAt: -1 })
       .populate('client', 'name phone');
 
+    const deliveries = await Delivery.find({ order: { $in: orders.map((o) => o._id) } }).select('order status');
+    const deliveryByOrder = new Map(deliveries.map((d) => [d.order.toString(), d]));
+
     const filtered = orders.map((order) => ({
+      deliveryId: deliveryByOrder.get(order._id.toString())?._id,
+      deliveryStatus: deliveryByOrder.get(order._id.toString())?.status,
+      deliveryIssue: order.deliveryIssue,
+      serviceLocationType: order.serviceLocationType,
+      paymentMethod: order.paymentMethod,
+      amountDue: order.amountDue ?? order.totalAmount,
+      pointsValue: order.pointsValue,
+      totalAmount: order.totalAmount,
+      providerCompletedAt: order.providerCompletedAt,
+      clientConfirmedAt: order.clientConfirmedAt,
+      finalizedAt: order.finalizedAt,
       _id: order._id,
       client: order.client,
       deliveryAddress: order.deliveryAddress,
@@ -209,6 +360,7 @@ const updateOrderStatus = async (req, res, next) => {
     }
 
     await order.save();
+    if (status === 'cancelled') await refundRedemption(order);
 
     const client = await User.findById(order.client).select('pushToken');
     if (client) {
@@ -229,22 +381,14 @@ const updateOrderStatus = async (req, res, next) => {
 };
 
 // @route   PATCH /api/orders/:id/complete
-// @access  Private (seller only — the provider/shop on this order)
+// @access  Private (the provider on this order)
+// body: { cashReceived?: true }  — required for cash bookings
 //
-// Closes a real gap: product orders reach 'completed' automatically
-// through the delivery flow (see deliveryController.markDelivered),
-// but there was no equivalent for orders containing only services —
-// nothing anywhere ever moved those out of 'confirmed', which also
-// meant they could never be rated (ratings require status:
-// 'completed'). Deliberately restricted to orders with zero product
-// items — an order with any physical product still completes via
-// delivery, not this, to avoid two different code paths racing to
-// decide when the same order is "done."
-//
-// Requires paymentStatus 'paid' before allowing this — this is the
-// actual payment gate for marketplace services: a provider can't mark
-// their own work done (and unlock the client's ability to rate it)
-// until payment has actually gone through.
+// STEP 1 of 2 for services. The provider says "the job is done" (and, for a
+// cash booking, "I have been paid the cash"). Nothing is final yet: the order
+// stays 'confirmed' until the CLIENT confirms too (confirmServiceOrder). Only
+// then are payouts created and points awarded. Product orders never use this —
+// they finish through the delivery code.
 const completeServiceOrder = async (req, res, next) => {
   try {
     const order = await Order.findById(req.params.id);
@@ -257,43 +401,88 @@ const completeServiceOrder = async (req, res, next) => {
       return res.status(403).json({ message: 'You do not have permission to update this order' });
     }
 
-    const hasProductItems = order.items.some((item) => item.itemType === 'product');
-    if (hasProductItems) {
+    if (order.items.some((item) => item.itemType === 'product')) {
       return res.status(400).json({
         message: 'This order includes physical products and completes automatically once delivered, not manually.'
       });
     }
-
     if (order.status !== 'confirmed') {
       return res.status(400).json({ message: `Can't complete an order from status "${order.status}".` });
     }
-    if (order.paymentStatus !== 'paid') {
+    if (order.providerCompletedAt) {
+      return res.status(400).json({ message: 'You already marked this as done — waiting for the client to confirm.' });
+    }
+
+    if (order.paymentMethod === 'cash') {
+      if (req.body.cashReceived !== true) {
+        return res.status(400).json({
+          message: `Confirm that you received R${(order.amountDue ?? order.totalAmount).toFixed(2)} cash from the client.`
+        });
+      }
+      order.providerCashConfirmed = true;
+    } else if (order.paymentStatus !== 'paid') {
       return res.status(400).json({ message: 'This order needs to be paid before it can be marked complete.' });
     }
 
-    order.status = 'completed';
+    order.providerCompletedAt = new Date();
     await order.save();
-
-    const sellerId = order.items[0]?.sellerSnapshot;
-    if (sellerId && order.totalAmount > 0) {
-      await createPayoutEntry({
-        recipient: sellerId,
-        amount: order.totalAmount, // no delivery fee ever applies to service-only orders
-        sourceType: 'order_seller_share',
-        sourceId: order._id
-      });
-    }
 
     const client = await User.findById(order.client).select('pushToken');
     if (client) {
       sendPushNotifications([client], {
-        title: 'Service completed',
-        body: 'Your provider marked this service as done — you can rate them from your orders.',
-        data: { type: 'order_status_changed', orderId: order._id.toString(), status: 'completed' }
+        title: 'Please confirm your service',
+        body:
+          order.paymentMethod === 'cash'
+            ? 'Your provider says the job is done and they received your cash. Open the app to confirm.'
+            : 'Your provider says the job is done. Open the app to confirm.',
+        data: { type: 'confirm_service', orderId: order._id.toString() }
       });
     }
+    req.app.get('io')?.to(`client_${order.client}`).emit('service_awaiting_confirmation', { orderId: order._id.toString() });
 
     res.status(200).json({ order });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/orders/:id/confirm
+// @access  Private (the client who booked)
+// body: { cashPaid?: true }  — required for cash bookings
+//
+// STEP 2 of 2. The client confirms the work was done (and, for cash, that they
+// paid). Both sides having confirmed finalizes the sale: payouts, 8%
+// commission, rewards points, live earnings update.
+const confirmServiceOrder = async (req, res, next) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ message: 'Order not found' });
+    if (order.client.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the client who booked this can confirm it.' });
+    }
+    if (order.items.some((item) => item.itemType === 'product')) {
+      return res.status(400).json({ message: 'Product orders are confirmed with the delivery code.' });
+    }
+    if (!order.providerCompletedAt) {
+      return res.status(400).json({ message: 'The provider has not marked this job as done yet.' });
+    }
+    if (order.clientConfirmedAt) {
+      return res.status(400).json({ message: 'You have already confirmed this.' });
+    }
+    if (order.paymentMethod === 'cash') {
+      if (req.body.cashPaid !== true) {
+        return res.status(400).json({
+          message: `Confirm that you paid R${(order.amountDue ?? order.totalAmount).toFixed(2)} cash to the provider.`
+        });
+      }
+      order.clientCashConfirmed = true;
+    }
+    order.clientConfirmedAt = new Date();
+    await order.save();
+
+    await finalizeServiceOrder(order._id, req.app.get('io'));
+    const fresh = await Order.findById(order._id);
+    res.status(200).json({ order: fresh });
   } catch (error) {
     next(error);
   }
@@ -307,9 +496,6 @@ const completeServiceOrder = async (req, res, next) => {
 const payOrder = async (req, res, next) => {
   try {
     const { paymentReference } = req.body;
-    if (!paymentReference) {
-      return res.status(400).json({ message: 'Payment reference is required' });
-    }
 
     const order = await Order.findById(req.params.id);
     if (!order) {
@@ -330,8 +516,25 @@ const payOrder = async (req, res, next) => {
       return res.status(400).json({ message: 'This order has already been paid' });
     }
 
+    if (!paymentReference && (order.amountDue ?? order.totalAmount) > 0) {
+      return res.status(400).json({ message: 'Payment reference is required' });
+    }
+    if (order.paymentMethod === 'cash') {
+      return res.status(400).json({ message: 'This is a cash booking — you pay the provider directly after the work is done.' });
+    }
+    const expectedAmount = order.amountDue ?? order.totalAmount;
+
     let verification;
-    try {
+    if (expectedAmount === 0) {
+      // Fully covered by rewards points: nothing to charge, nothing to verify.
+      verification = { status: 'success', amount: 0, metadata: { orderId: order._id.toString() } };
+    } else if (isTestReference(paymentReference)) {
+      // Temporary tester-only path — see utils/testPayments.js.
+      if (!isTestPaymentAllowedFor(req.user)) {
+        return res.status(403).json({ message: 'Test payments are not enabled for this account.' });
+      }
+      verification = buildTestVerification('orderId', order._id, expectedAmount);
+    } else try {
       verification = await verifyPaystackTransaction(paymentReference);
     } catch (verifyError) {
       console.error('Paystack verification request failed:', verifyError?.response?.data || verifyError.message);
@@ -362,12 +565,12 @@ const payOrder = async (req, res, next) => {
       return res.status(402).json({ message: 'This payment reference does not match this order.' });
     }
 
-    if (!amountMatchesExpected(verification.amount, order.totalAmount)) {
+    if (!amountMatchesExpected(verification.amount, expectedAmount)) {
       return res.status(402).json({ message: "Payment amount does not match this order's total" });
     }
 
     order.paymentStatus = 'paid';
-    order.paymentReference = paymentReference;
+    if (expectedAmount > 0) order.paymentReference = paymentReference;
     await order.save();
 
     const sellerIds = [...new Set(order.items.map((item) => item.sellerSnapshot.toString()))];
@@ -404,4 +607,4 @@ const payOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { checkout, getMyOrders, getIncomingOrders, getOrderById, updateOrderStatus, completeServiceOrder, payOrder };
+module.exports = { getCheckoutQuote, checkout, getMyOrders, getIncomingOrders, getOrderById, updateOrderStatus, completeServiceOrder, confirmServiceOrder, payOrder };

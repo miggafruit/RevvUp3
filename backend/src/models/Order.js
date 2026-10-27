@@ -64,6 +64,17 @@ const orderSchema = new mongoose.Schema(
       default: 0,
       min: 0
     },
+    // How the fee was worked out, kept for support/disputes.
+    deliveryDistanceKm: { type: Number, min: 0 },
+    deliveryTier: { type: Number, min: 1, max: 3 },
+    totalWeightKg: { type: Number, min: 0 },
+    // Services only: 'at_client' = provider travels to the vehicle/location in
+    // deliveryAddress; 'at_provider' = client brings the vehicle to the
+    // provider's workshop (deliveryAddress holds the provider's address).
+    serviceLocationType: {
+      type: String,
+      enum: ['at_client', 'at_provider']
+    },
     deliveryAddress: {
       type: String,
       required: [true, 'Delivery address is required'],
@@ -79,6 +90,30 @@ const orderSchema = new mongoose.Schema(
       enum: ['pending', 'confirmed', 'completed', 'cancelled'],
       default: 'pending'
     },
+    // Set when something went wrong after payment that needs a human decision
+    // (e.g. delivery code failed 3 times and the order went back to the shop
+    // — the client may be owed a refund).
+    // How the client pays. 'card' = Paystack in the app, 'cash' = handed to the
+    // provider in person (services only), 'points' = fully covered by rewards.
+    paymentMethod: { type: String, enum: ['card', 'cash', 'points'], default: 'card' },
+    // Rewards points the client spent on this order and their rand value.
+    pointsRedeemed: { type: Number, default: 0, min: 0 },
+    pointsValue: { type: Number, default: 0, min: 0 },
+    // What the client actually pays (card or cash) = totalAmount - pointsValue.
+    // Undefined on older orders, which means "the full totalAmount".
+    amountDue: { type: Number, min: 0 },
+    // Whether the seller was in the rewards programme when this was ordered
+    // (snapshotted so a later lapse can't take away points already promised).
+    rewardsEligible: { type: Boolean, default: false },
+    pointsEarned: { type: Number, default: 0 },
+    // Two-sided completion for services: both must be set before the order is
+    // final, payouts are created and points are awarded.
+    providerCompletedAt: { type: Date },
+    providerCashConfirmed: { type: Boolean, default: false },
+    clientConfirmedAt: { type: Date },
+    clientCashConfirmed: { type: Boolean, default: false },
+    finalizedAt: { type: Date },
+    deliveryIssue: { type: String, enum: ['failed_code_returned'] },
     notes: {
       type: String,
       trim: true

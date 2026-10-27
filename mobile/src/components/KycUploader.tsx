@@ -15,6 +15,8 @@ interface Props {
    * type existed in the schema but was never actually offered as a
    * slot anywhere, so nobody was ever prompted to upload it. */
   showVehicleDocument?: boolean;
+  /** Adds the Police Clearance Certificate slot (drivers + individual providers). */
+  showPoliceClearance?: boolean;
 }
 
 const SHOP_SLOTS: Array<{ type: KycDocument['type']; label: string; hint: string }> = [
@@ -34,6 +36,12 @@ const VEHICLE_DOCUMENT_SLOT: { type: KycDocument['type']; label: string; hint: s
   type: 'vehicle_registration',
   label: 'Vehicle Registration / Roadworthy',
   hint: "Required before you'll actually be dispatched any delivery or roadside/towing jobs — clients need to know your vehicle checks out."
+};
+
+const POLICE_CLEARANCE_SLOT: { type: KycDocument['type']; label: string; hint: string } = {
+  type: 'police_clearance',
+  label: 'Police Clearance Certificate',
+  hint: 'Criminal record check — SAPS police clearance (or an accredited vetting report), less than 6 months old. Required before approval.'
 };
 
 const imageFromResult = (result: ImagePicker.ImagePickerResult): string | null => {
@@ -122,15 +130,16 @@ const pickImage = async (preferCamera: boolean): Promise<string | null> => {
   });
 };
 
-const KycUploader: React.FC<Props> = ({ role, documents, onChange, showVehicleDocument }) => {
+const KycUploader: React.FC<Props> = ({ role, documents, onChange, showVehicleDocument, showPoliceClearance }) => {
   const [customLabel, setCustomLabel] = useState('');
 
-  const suggestedSlots =
+  const baseSlots =
     role === 'shop'
       ? SHOP_SLOTS
       : showVehicleDocument
         ? [...SERVICE_PROVIDER_SLOTS, VEHICLE_DOCUMENT_SLOT]
         : SERVICE_PROVIDER_SLOTS;
+  const suggestedSlots = showPoliceClearance && role !== 'shop' ? [...baseSlots, POLICE_CLEARANCE_SLOT] : baseSlots;
 
   const findDoc = (type: KycDocument['type']) => documents.find((d) => d.type === type);
 

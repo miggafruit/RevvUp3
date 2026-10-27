@@ -34,6 +34,7 @@ export interface ProductInput {
   specs: Spec[];
   images: string[];
   stock: number;
+  weightKg: number;
   condition: 'Brand New' | 'Used' | 'Refurbished';
   deliveryEstimate?: string;
 }

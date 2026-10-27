@@ -8,6 +8,7 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "seed:admin": "node scripts/seedAdmin.js",
+    "seed:test-driver": "node scripts/seedTestDriver.js",
     "test": "jest"
   },
   "dependencies": {

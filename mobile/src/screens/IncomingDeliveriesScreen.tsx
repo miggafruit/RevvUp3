@@ -5,7 +5,8 @@ import {
   FlatList,
   TouchableOpacity,
   ActivityIndicator,
-  StyleSheet
+  StyleSheet,
+  TextInput
 } from 'react-native';
 import { showAlert } from '../utils/crossPlatformAlert';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -29,6 +30,9 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
   const [active, setActive] = useState<Delivery | null>(null);
   const [driverLocation, setDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [isAccepting, setIsAccepting] = useState(false);
+  const [codeInput, setCodeInput] = useState('');
+  const [isSubmittingCode, setIsSubmittingCode] = useState(false);
+  const [codeMessage, setCodeMessage] = useState<string | null>(null);
 
   const mapRef = useRef<MapView>(null);
   const locationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -144,24 +148,53 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
     }
   };
 
-  const handleMarkDelivered = () => {
-    if (!active) return;
-    showAlert('Confirm Delivery', 'Mark this as delivered to the client?', [
-      { text: 'Not yet' },
-      {
-        text: 'Delivered',
-        onPress: async () => {
-          try {
-            await deliveryApi.markDelivered(active._id);
-            if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
-            setActive(null);
-            loadPending();
-          } catch (error: any) {
-            showAlert('Error', error?.response?.data?.message || 'Could not mark as delivered');
-          }
+  // While waiting for the shop to confirm a returned order, keep checking so
+  // the driver is freed up as soon as the shop confirms.
+  useEffect(() => {
+    if (active?.status !== 'return_to_shop') return;
+    const id = setInterval(async () => {
+      try {
+        const current = await deliveryApi.getMyActiveDelivery();
+        if (!current) {
+          setActive(null);
+          loadPending();
         }
+      } catch {
+        // ignore — next tick retries
       }
-    ]);
+    }, 10000);
+    return () => clearInterval(id);
+  }, [active?.status, loadPending]);
+
+  const handleSubmitCode = async () => {
+    if (!active) return;
+    if (!/^\d{4}$/.test(codeInput)) {
+      setCodeMessage('Enter the 4-digit code the client gives you.');
+      return;
+    }
+    setIsSubmittingCode(true);
+    setCodeMessage(null);
+    try {
+      await deliveryApi.markDelivered(active._id, codeInput);
+      if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
+      setCodeInput('');
+      setActive(null);
+      loadPending();
+      showAlert('Delivered', 'Code accepted — delivery complete.');
+    } catch (error: any) {
+      const data = error?.response?.data;
+      setCodeInput('');
+      if (data?.returnToShop) {
+        // Three wrong attempts: the server has locked the delivery.
+        if (locationIntervalRef.current) clearInterval(locationIntervalRef.current);
+        setActive((prev) => (prev ? { ...prev, status: 'return_to_shop' } : prev));
+        setCodeMessage(null);
+      } else {
+        setCodeMessage(data?.message || 'Could not verify the code. Try again.');
+      }
+    } finally {
+      setIsSubmittingCode(false);
+    }
   };
 
   if (active) {
@@ -195,7 +228,11 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
 
         <View style={styles.activeCard}>
           <Text style={styles.activeTitle}>
-            {active.status === 'accepted' ? 'Head to the shop' : 'Delivering to client'}
+            {active.status === 'accepted'
+              ? 'Head to the shop'
+              : active.status === 'return_to_shop'
+              ? 'Take the order back to the shop'
+              : 'Delivering to client'}
           </Text>
 
           <View style={styles.addressBlock}>
@@ -217,10 +254,49 @@ const IncomingDeliveriesScreen: React.FC<Props> = ({ navigation }) => {
             <TouchableOpacity style={styles.primaryButton} onPress={handleMarkPickedUp}>
               <Text style={styles.primaryButtonText}>Picked Up from Shop</Text>
             </TouchableOpacity>
+          ) : active.status === 'return_to_shop' ? (
+            <View>
+              <Text style={[styles.addressText, { color: '#FCA5A5', marginTop: 8 }]}>
+                The code was wrong 3 times. Do not hand over the order — return it to the shop. The shop will
+                confirm when it is back with them.
+              </Text>
+              {!!active.pickupPhone && <Text style={styles.addressText}>Shop phone: {active.pickupPhone}</Text>}
+            </View>
           ) : (
-            <TouchableOpacity style={styles.successButton} onPress={handleMarkDelivered}>
-              <Text style={styles.primaryButtonText}>Mark Delivered</Text>
-            </TouchableOpacity>
+            <View>
+              <Text style={styles.addressLabel}>Ask the client for their 4-digit delivery code</Text>
+              <TextInput
+                value={codeInput}
+                onChangeText={(t) => setCodeInput(t.replace(/\D/g, '').slice(0, 4))}
+                keyboardType="number-pad"
+                maxLength={4}
+                placeholder="• • • •"
+                placeholderTextColor="#6B7280"
+                style={{
+                  backgroundColor: '#0A1628',
+                  color: 'white',
+                  fontSize: 28,
+                  letterSpacing: 8,
+                  textAlign: 'center',
+                  borderRadius: 10,
+                  paddingVertical: 10,
+                  marginVertical: 8,
+                  borderWidth: 1,
+                  borderColor: '#1E3A5F'
+                }}
+              />
+              {!!codeMessage && <Text style={{ color: '#FCA5A5', marginBottom: 6 }}>{codeMessage}</Text>}
+              <TouchableOpacity
+                style={[styles.successButton, isSubmittingCode && { opacity: 0.6 }]}
+                onPress={handleSubmitCode}
+                disabled={isSubmittingCode}
+              >
+                {isSubmittingCode ? <ActivityIndicator color="white" /> : <Text style={styles.primaryButtonText}>Confirm Delivery</Text>}
+              </TouchableOpacity>
+              <Text style={{ color: '#9CA3AF', fontSize: 11, marginTop: 6, textAlign: 'center' }}>
+                You have 3 attempts. After 3 wrong codes you must return the order to the shop.
+              </Text>
+            </View>
           )}
         </View>
       </View>

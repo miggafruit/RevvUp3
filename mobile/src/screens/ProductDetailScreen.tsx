@@ -17,6 +17,7 @@ import { Product } from '../types/marketplace';
 import { useCart } from '../context/CartContext';
 import StarRating from '../components/StarRating';
 import { colors, spacing, radius, typography } from '../theme/colors';
+import RewardsBadge from '../components/RewardsBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProductDetail'>;
 
@@ -109,6 +110,7 @@ const ProductDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         )}
 
         <View style={styles.body}>
+          {product.sellerRewardsActive && <View style={{ marginBottom: 8 }}><RewardsBadge size="large" /></View>}
           <View style={styles.titleRow}>
             <Text style={styles.name}>{product.name}</Text>
             <View style={styles.categoryBadge}>

@@ -45,6 +45,10 @@ export interface KycQueueItem {
   businessAddress?: string;
   category?: string;
   kycDocuments: KycDocument[];
+  providerType?: 'individual' | 'business';
+  isDriver?: boolean;
+  roadsideServices?: string[];
+  policeClearance?: { issuedOn?: string; referenceNumber?: string; verifiedAt?: string };
   bankingDetails?: BankingDetails;
   createdAt: string;
 }
@@ -134,6 +138,8 @@ export interface OrderListItem {
   totalAmount: number;
   deliveryFee?: number;
   deliveryAddress: string;
+  serviceLocationType?: 'at_client' | 'at_provider';
+  deliveryIssue?: 'failed_code_returned';
   contactPhone: string;
   status: 'pending' | 'confirmed' | 'completed' | 'cancelled';
   paymentStatus: string;

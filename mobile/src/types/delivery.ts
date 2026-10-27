@@ -9,7 +9,10 @@ export interface Delivery {
   dropoffPhone: string;
   items: Array<{ nameSnapshot: string; quantity: number }>;
   totalAmount: number;
-  status: 'pending' | 'accepted' | 'picked_up' | 'delivered' | 'cancelled';
+  status: 'pending' | 'accepted' | 'picked_up' | 'delivered' | 'return_to_shop' | 'returned' | 'cancelled';
+  /** Only ever present for the client who owns the delivery. */
+  deliveryCode?: string;
+  codeAttempts?: number;
   driver?: {
     driver_id: string;
     driver_name: string;

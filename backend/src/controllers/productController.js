@@ -1,12 +1,17 @@
 const Product = require('../models/Product');
 const User = require('../models/User');
 const mongoose = require('mongoose');
+const { activeRewardsSellerIds, rankedPage, splitBySeller, isActiveDoc } = require('../utils/rewardsRanking');
 
 // @route   POST /api/products
 // @access  Private (shop only)
 const createProduct = async (req, res, next) => {
   try {
-    const { name, price, category, description, specs, images, stock, condition, deliveryEstimate } = req.body;
+    const { name, price, category, description, specs, images, stock, condition, deliveryEstimate, weightKg } = req.body;
+
+    if (weightKg == null || isNaN(Number(weightKg)) || Number(weightKg) <= 0) {
+      return res.status(400).json({ message: 'Product weight (kg) is required — it is used to price delivery.' });
+    }
 
     const product = await Product.create({
       shop: req.user._id,
@@ -18,7 +23,8 @@ const createProduct = async (req, res, next) => {
       images,
       stock,
       condition,
-      deliveryEstimate
+      deliveryEstimate,
+      weightKg: Number(weightKg)
     });
 
     res.status(201).json({ product });
@@ -39,7 +45,7 @@ const updateProduct = async (req, res, next) => {
       return res.status(403).json({ message: 'You do not have permission to edit this product' });
     }
 
-    const allowedFields = ['name', 'price', 'category', 'description', 'specs', 'images', 'stock', 'condition', 'deliveryEstimate', 'isActive'];
+    const allowedFields = ['name', 'price', 'category', 'description', 'specs', 'images', 'stock', 'condition', 'deliveryEstimate', 'weightKg', 'isActive'];
     allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
         product[field] = req.body[field];
@@ -124,15 +130,48 @@ const getProducts = async (req, res, next) => {
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
 
-    const [products, total] = await Promise.all([
-      Product.find(query)
-        .select('-specs -description -images')
-        .sort({ createdAt: -1 })
-        .skip((pageNum - 1) * limitNum)
-        .limit(limitNum)
-        .populate('shop', 'businessName businessAddress'),
-      Product.countDocuments(query)
-    ]);
+    // Products from rewards-programme shops first, then everyone else.
+    let products;
+    let total;
+    if (typeof query.shop === 'string') {
+      // A single shop's page — no ranking to do.
+      const single = await Promise.all([
+        Product.find(query)
+          .select('-specs -description -images')
+          .sort({ createdAt: -1 })
+          .skip((pageNum - 1) * limitNum)
+          .limit(limitNum)
+          .populate('shop', 'businessName businessAddress rewardsProgram'),
+        Product.countDocuments(query)
+      ]);
+      products = single[0].map((p) => ({ doc: p, rewardsActive: isActiveDoc(p.shop) }));
+      total = single[1];
+    } else {
+      const rewardIds = await activeRewardsSellerIds();
+      const { filterA, filterB } = splitBySeller(query, 'shop', rewardIds);
+      const result = await rankedPage({
+        runFind: (f, skip, lim) =>
+          Product.find(f)
+            .select('-specs -description -images')
+            .sort({ createdAt: -1 })
+            .skip(skip)
+            .limit(lim)
+            .populate('shop', 'businessName businessAddress'),
+        runCount: (f) => Product.countDocuments(f),
+        filterA,
+        filterB,
+        skip: (pageNum - 1) * limitNum,
+        limit: limitNum
+      });
+      products = result.items;
+      total = result.total;
+    }
+    products = products.map(({ doc, rewardsActive }) => {
+      const out = doc.toObject();
+      out.sellerRewardsActive = rewardsActive;
+      if (out.shop) delete out.shop.rewardsProgram;
+      return out;
+    });
 
     res.status(200).json({
       products,
@@ -149,14 +188,17 @@ const getProductById = async (req, res, next) => {
   try {
     const product = await Product.findById(req.params.id).populate(
       'shop',
-      'businessName businessAddress phone kycStatus'
+      'businessName businessAddress phone kycStatus rewardsProgram'
     );
 
     if (!product || !product.isActive || product.shop?.kycStatus !== 'approved') {
       return res.status(404).json({ message: 'Product not found' });
     }
 
-    res.status(200).json({ product });
+    const productOut = product.toObject();
+    productOut.sellerRewardsActive = isActiveDoc(product.shop);
+    if (productOut.shop) delete productOut.shop.rewardsProgram;
+    res.status(200).json({ product: productOut });
   } catch (error) {
     next(error);
   }

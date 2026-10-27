@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import { Product } from '../types/marketplace';
+import RewardsBadge from './RewardsBadge';
 
 interface ProductCardProps {
   product: Product;
@@ -27,6 +28,7 @@ const ProductCard: React.FC<ProductCardProps> = ({ product, onPress, onAddToCart
         <Text style={styles.name} numberOfLines={1}>
           {product.name}
         </Text>
+        {product.sellerRewardsActive && <RewardsBadge />}
         <Text style={styles.price}>R {product.price.toLocaleString()}</Text>
 
         <TouchableOpacity

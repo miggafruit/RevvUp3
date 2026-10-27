@@ -53,8 +53,11 @@ export const getMyBankingDetails = async (): Promise<BankingDetails | null> => {
   return data.bankingDetails;
 };
 
-export const resubmitKyc = async (kycDocuments: KycDocument[]): Promise<User> => {
-  const { data } = await apiClient.post<{ user: User }>('/auth/kyc/resubmit', { kycDocuments });
+export const resubmitKyc = async (
+  kycDocuments: KycDocument[],
+  policeClearance?: { issuedOn: string; referenceNumber?: string }
+): Promise<User> => {
+  const { data } = await apiClient.post<{ user: User }>('/auth/kyc/resubmit', { kycDocuments, policeClearance });
   return data.user;
 };
 

@@ -1,9 +1,12 @@
+const { isTestPaymentAllowedFor } = require('../utils/testPayments');
+const { requiresPoliceClearance, hasValidClearance } = require('../config/clearance');
 const Delivery = require('../models/Delivery');
 const Order = require('../models/Order');
 const User = require('../models/User');
 const { findAvailableDeliveryDrivers } = require('../utils/matching');
 const { sendPushNotifications } = require('../utils/pushNotifications');
 const { createPayoutEntry } = require('../utils/payouts');
+const { afterProductDelivered } = require('../services/orderFinalization');
 
 /**
  * Sends a push to a delivery's client. Deliberately does its own
@@ -118,8 +121,8 @@ const acceptDelivery = async (req, res, next) => {
     }
     // Matching already filters by kycStatus: 'approved' — this is a
     // second check for anyone who reaches this endpoint some other way.
-    if (req.user.kycStatus !== 'approved') {
-      return res.status(403).json({ message: 'Your account needs to complete verification before accepting deliveries.' });
+    if (req.user.kycStatus !== 'approved' || (requiresPoliceClearance(req.user) && !hasValidClearance(req.user))) {
+      return res.status(403).json({ message: 'Your account needs complete, current verification (including a verified police clearance) before accepting deliveries.' });
     }
 
     const delivery = await Delivery.findById(req.params.id);
@@ -166,6 +169,9 @@ const updateDeliveryLocation = async (req, res, next) => {
     const { latitude, longitude } = req.body;
     const delivery = await Delivery.findById(req.params.id);
     if (!delivery) return res.status(404).json({ message: 'Delivery not found' });
+    if (delivery.driver?.driver_id !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the driver assigned to this delivery can do that.' });
+    }
 
     if (delivery.driver) {
       delivery.driver.driver_location = { latitude, longitude };
@@ -193,6 +199,12 @@ const markPickedUp = async (req, res, next) => {
   try {
     const delivery = await Delivery.findById(req.params.id);
     if (!delivery) return res.status(404).json({ message: 'Delivery not found' });
+    if (delivery.driver?.driver_id !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the driver assigned to this delivery can do that.' });
+    }
+    if (delivery.status !== 'accepted') {
+      return res.status(409).json({ message: 'This delivery is not waiting to be picked up.' });
+    }
 
     delivery.status = 'picked_up';
     delivery.pickedUpAt = new Date();
@@ -221,6 +233,70 @@ const markDelivered = async (req, res, next) => {
   try {
     const delivery = await Delivery.findById(req.params.id);
     if (!delivery) return res.status(404).json({ message: 'Delivery not found' });
+    if (delivery.driver?.driver_id !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the driver assigned to this delivery can do that.' });
+    }
+    // Prevents a second tap / replayed request from creating duplicate payouts.
+    if (delivery.status !== 'picked_up') {
+      return res.status(409).json({ message: 'This delivery has not been picked up, or is already delivered.' });
+    }
+
+    // Proof of delivery: the client's code. Attempts are counted atomically in
+    // the database (before comparing) so parallel guesses can't squeeze past
+    // the limit, and the count survives app restarts.
+    const submitted = String(req.body.code ?? '').trim();
+    if (!/^\d{4}$/.test(submitted)) {
+      return res.status(400).json({ message: 'Enter the 4-digit code from the client.' });
+    }
+    const attemptDoc = await Delivery.findOneAndUpdate(
+      { _id: delivery._id, status: 'picked_up', codeAttempts: { $lt: MAX_CODE_ATTEMPTS } },
+      { $inc: { codeAttempts: 1 } },
+      { new: true }
+    ).select('+deliveryCode');
+    if (!attemptDoc) {
+      return res.status(409).json({ message: 'No attempts left. Return the order to the shop.', returnToShop: true });
+    }
+    if (!attemptDoc.deliveryCode) {
+      return res.status(409).json({ message: 'This delivery has no code yet — ask the client to open their tracking screen.' });
+    }
+    const a = Buffer.from(attemptDoc.deliveryCode);
+    const b = Buffer.from(submitted);
+    const matches = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!matches) {
+      const remaining = MAX_CODE_ATTEMPTS - attemptDoc.codeAttempts;
+      if (remaining > 0) {
+        return res.status(400).json({
+          message: `Wrong code. ${remaining} attempt${remaining === 1 ? '' : 's'} left.`,
+          attemptsRemaining: remaining
+        });
+      }
+      // Third wrong try: the delivery cannot be completed. Driver takes the
+      // product back to the shop.
+      attemptDoc.status = 'return_to_shop';
+      attemptDoc.returnRequestedAt = new Date();
+      await attemptDoc.save();
+      const ioReturn = req.app.get('io');
+      ioReturn?.to(`client_${attemptDoc.client}`).emit('delivery_return_to_shop', { delivery_id: attemptDoc._id.toString() });
+      notifyDeliveryClient(attemptDoc, {
+        title: 'Delivery not completed',
+        body: 'The delivery code was entered incorrectly 3 times, so the driver is taking your order back to the shop. Contact support if you believe this is a mistake.',
+        data: { type: 'delivery_return_to_shop', deliveryId: attemptDoc._id.toString() }
+      });
+      const shopUser = await User.findById(attemptDoc.shop).select('pushToken');
+      if (shopUser) {
+        sendPushNotifications([shopUser], {
+          title: 'Order coming back',
+          body: 'A delivery could not be completed (wrong code 3 times). The driver is returning the order to you — confirm when you receive it.',
+          data: { type: 'delivery_return_to_shop', deliveryId: attemptDoc._id.toString() }
+        });
+      }
+      return res.status(423).json({
+        message: 'Wrong code 3 times. Do NOT hand over the order — take it back to the shop.',
+        attemptsRemaining: 0,
+        returnToShop: true,
+        delivery: attemptDoc
+      });
+    }
 
     delivery.status = 'delivered';
     delivery.deliveredAt = new Date();
@@ -261,11 +337,68 @@ const markDelivered = async (req, res, next) => {
       io.to(`client_${delivery.client}`).emit('delivery_completed', { delivery_id: delivery._id.toString() });
     }
 
+    // Points for the client + live earnings updates for seller and driver.
+    afterProductDelivered(order, io, { driverId: delivery.driver?.driver_id }).catch((err) =>
+      console.warn('[delivery] post-delivery follow-ups failed:', err.message)
+    );
+
     notifyDeliveryClient(delivery, {
       title: 'Delivered',
       body: 'Your order has been delivered.',
       data: { type: 'delivery_completed', deliveryId: delivery._id.toString() }
     });
+
+    res.status(200).json({ delivery });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/deliveries/:id/test-advance
+// @access  Private (client, tester allowlist only — see utils/testPayments.js)
+// TEMPORARY testing aid: lets ONE tester walk their own delivery through
+// accepted -> picked up -> delivered without needing a second phone/driver
+// account. Uses a clearly-named fake driver, creates NO payouts, and is
+// rejected for everyone not on TEST_PAYMENT_EMAILS.
+const testAdvanceDelivery = async (req, res, next) => {
+  try {
+    if (!isTestPaymentAllowedFor(req.user)) {
+      return res.status(403).json({ message: 'Test tools are not enabled for this account.' });
+    }
+    const delivery = await Delivery.findById(req.params.id);
+    if (!delivery) return res.status(404).json({ message: 'Delivery not found' });
+    if (delivery.client.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not your delivery.' });
+    }
+
+    const io = req.app.get('io');
+    const id = delivery._id.toString();
+
+    if (delivery.status === 'pending') {
+      delivery.status = 'accepted';
+      delivery.driver = {
+        driver_id: 'TEST_DRIVER',
+        driver_name: 'Test Driver (simulated)',
+        driver_phone: '0000000000',
+        driver_vehicle: 'Test Vehicle'
+      };
+      delivery.acceptedAt = new Date();
+      await delivery.save();
+      io?.to(`client_${delivery.client}`).emit('delivery_accepted', delivery);
+    } else if (delivery.status === 'accepted') {
+      delivery.status = 'picked_up';
+      delivery.pickedUpAt = new Date();
+      await delivery.save();
+      io?.to(`client_${delivery.client}`).emit('delivery_picked_up', { delivery_id: id });
+    } else if (delivery.status === 'picked_up') {
+      delivery.status = 'delivered';
+      delivery.deliveredAt = new Date();
+      await delivery.save();
+      await Order.findByIdAndUpdate(delivery.order, { status: 'completed' });
+      io?.to(`client_${delivery.client}`).emit('delivery_completed', { delivery_id: id });
+    } else {
+      return res.status(409).json({ message: 'This delivery is already finished.' });
+    }
 
     res.status(200).json({ delivery });
   } catch (error) {
@@ -288,6 +421,62 @@ const getDeliveryByOrder = async (req, res, next) => {
       return res.status(403).json({ message: 'You do not have permission to view this delivery' });
     }
 
+    // Only the client ever receives the code (created lazily for deliveries
+    // made before this feature existed).
+    const out = delivery.toJSON();
+    if (isOwner && ['accepted', 'picked_up'].includes(delivery.status)) {
+      const withCode = await Delivery.findById(delivery._id).select('+deliveryCode');
+      if (!withCode.deliveryCode) {
+        withCode.deliveryCode = generateCode();
+        await withCode.save();
+      }
+      out.deliveryCode = withCode.deliveryCode;
+    }
+    res.status(200).json({ delivery: out });
+  } catch (error) {
+    next(error);
+  }
+};
+
+// @route   POST /api/deliveries/:id/confirm-returned
+// @access  Private (the shop that sent the order)
+// The shop confirms the driver brought the order back. Stock is restored and
+// the order is flagged so an admin can decide on a refund — money is never
+// moved automatically.
+const confirmReturned = async (req, res, next) => {
+  try {
+    const delivery = await Delivery.findById(req.params.id);
+    if (!delivery) return res.status(404).json({ message: 'Delivery not found' });
+    if (delivery.shop.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Only the shop that sent this order can confirm its return.' });
+    }
+    if (delivery.status !== 'return_to_shop') {
+      return res.status(409).json({ message: 'This delivery is not waiting to be returned.' });
+    }
+
+    delivery.status = 'returned';
+    delivery.returnedAt = new Date();
+    await delivery.save();
+
+    const Product = require('../models/Product');
+    const order = await Order.findById(delivery.order);
+    if (order) {
+      await Promise.all(
+        order.items
+          .filter((i) => i.itemType === 'product')
+          .map((i) => Product.findByIdAndUpdate(i.product, { $inc: { stock: i.quantity } }))
+      );
+      order.deliveryIssue = 'failed_code_returned';
+      await order.save();
+    }
+
+    notifyDeliveryClient(delivery, {
+      title: 'Order returned to the shop',
+      body: 'Your order is back with the shop. Our team will contact you about next steps.',
+      data: { type: 'delivery_returned', deliveryId: delivery._id.toString() }
+    });
+    req.app.get('io')?.to(`client_${delivery.client}`).emit('delivery_returned', { delivery_id: delivery._id.toString() });
+
     res.status(200).json({ delivery });
   } catch (error) {
     next(error);
@@ -302,5 +491,7 @@ module.exports = {
   updateDeliveryLocation,
   markPickedUp,
   markDelivered,
-  getDeliveryByOrder
+  getDeliveryByOrder,
+  confirmReturned,
+  testAdvanceDelivery
 };

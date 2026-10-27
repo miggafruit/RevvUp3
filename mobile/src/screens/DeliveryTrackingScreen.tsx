@@ -8,6 +8,7 @@ import { hasGoogleMapsKey } from '../utils/mapsConfig';
 import { useAuth } from '../context/AuthContext';
 import { useEHailingEvents } from '../context/EHailingSocketContext';
 import * as deliveryApi from '../api/deliveryApi';
+import { isTestPaymentEnabled } from '../api/testPaymentApi';
 import { getOrderById } from '../api/orderApi';
 import { geocodeAddress, getDirections } from '../api/locationApi';
 import { decodePolyline } from '../utils/polyline';
@@ -20,10 +21,12 @@ import { colors, spacing, radius, typography } from '../theme/colors';
 type Props = NativeStackScreenProps<RootStackParamList, 'DeliveryTracking'>;
 
 const STATUS_COPY: Record<string, { title: string; subtitle: string }> = {
-  pending: { title: 'Finding a driver…', subtitle: 'We are matching your delivery with a nearby driver.' },
+  pending: { title: 'Finding a driver…', subtitle: 'Payment received. We are matching your order with an available driver — this screen updates automatically the moment one accepts. If it takes a while, no driver may be online yet; your delivery stays queued and drivers will see it as soon as they go online.' },
   accepted: { title: 'Driver Assigned', subtitle: 'Your driver is heading to the shop to collect your order.' },
   picked_up: { title: 'On the Way', subtitle: 'Your order has been picked up and is on its way to you.' },
-  delivered: { title: 'Delivered!', subtitle: 'Your order has arrived.' }
+  delivered: { title: 'Delivered!', subtitle: 'Your order has arrived.' },
+  return_to_shop: { title: 'Delivery not completed', subtitle: 'The delivery code was entered incorrectly 3 times, so the driver is taking your order back to the shop. Our team will contact you about next steps.' },
+  returned: { title: 'Order returned to the shop', subtitle: 'Your order is back with the shop. Our team will contact you about next steps.' }
 };
 
 const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
@@ -46,11 +49,17 @@ const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
   // wrong" — the two look identical from a 404 alone, so we check the order
   // itself to tell them apart and show the right message for each.
   const [isServiceOrder, setIsServiceOrder] = useState(false);
+  const [testTools, setTestTools] = useState(false);
+  const [isAdvancing, setIsAdvancing] = useState(false);
+  useEffect(() => {
+    isTestPaymentEnabled().then(setTestTools);
+  }, []);
 
   const loadDelivery = useCallback(async () => {
     try {
       const data = await deliveryApi.getDeliveryByOrder(orderId);
       setDelivery(data);
+      setNotFound(false);
       if (data.driver?.driver_location) setDriverLocation(data.driver.driver_location);
     } catch (error: any) {
       if (error?.response?.status === 404) {
@@ -134,7 +143,9 @@ const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
       }
     },
     onDeliveryPickedUp: () => setDelivery((prev) => (prev ? { ...prev, status: 'picked_up' } : prev)),
-    onDeliveryCompleted: () => setDelivery((prev) => (prev ? { ...prev, status: 'delivered' } : prev))
+    onDeliveryCompleted: () => setDelivery((prev) => (prev ? { ...prev, status: 'delivered' } : prev)),
+    onDeliveryReturnToShop: () => loadDelivery(),
+    onDeliveryReturned: () => loadDelivery()
   });
 
   const openDirections = (address: string) => {
@@ -237,6 +248,20 @@ const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
         <Text style={styles.title}>{copy.title}</Text>
         <Text style={styles.subtitle}>{copy.subtitle}</Text>
 
+        {delivery.deliveryCode && (delivery.status === 'accepted' || delivery.status === 'picked_up') && (
+          <View style={{ backgroundColor: colors.surface, borderRadius: 12, padding: 14, marginVertical: 8, alignItems: 'center', borderWidth: 1, borderColor: colors.accent }}>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, textAlign: 'center' }}>
+              Your delivery code — give it to the driver ONLY when you are holding your order
+            </Text>
+            <Text style={{ color: colors.accent, fontSize: 36, fontWeight: '800', letterSpacing: 10, marginTop: 4 }}>
+              {delivery.deliveryCode}
+            </Text>
+            <Text style={{ color: colors.textMuted, fontSize: 11, marginTop: 4, textAlign: 'center' }}>
+              The driver has 3 attempts to enter it. After that the order goes back to the shop.
+            </Text>
+          </View>
+        )}
+
         {delivery.driver && (
           <View style={styles.driverRow}>
             <View style={{ flex: 1 }}>
@@ -244,6 +269,28 @@ const DeliveryTrackingScreen: React.FC<Props> = ({ navigation, route }) => {
               <Text style={styles.driverVehicle}>{delivery.driver.driver_vehicle}</Text>
             </View>
           </View>
+        )}
+
+        {testTools && delivery.status !== 'delivered' && (
+          <TouchableOpacity
+            disabled={isAdvancing}
+            onPress={async () => {
+              setIsAdvancing(true);
+              try {
+                setDelivery(await deliveryApi.testAdvanceDelivery(delivery._id));
+              } catch (e) {
+                console.warn('Test advance failed', e);
+              } finally {
+                setIsAdvancing(false);
+              }
+            }}
+            style={{ backgroundColor: '#FACC15', padding: 12, borderRadius: 10, alignItems: 'center', marginVertical: 8, opacity: isAdvancing ? 0.6 : 1 }}
+          >
+            <Text style={{ color: '#111827', fontWeight: '700' }}>
+              TESTER: simulate next step (
+              {delivery.status === 'pending' ? 'driver accepts' : delivery.status === 'accepted' ? 'picked up' : 'delivered'})
+            </Text>
+          </TouchableOpacity>
         )}
 
         <TouchableOpacity style={styles.addressRow} onPress={() => openDirections(delivery.pickupAddress)}>

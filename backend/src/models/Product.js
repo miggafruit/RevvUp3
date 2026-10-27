@@ -52,6 +52,12 @@ const productSchema = new mongoose.Schema(
         message: 'A product can have a maximum of 5 images'
       }
     },
+    // Weight of ONE unit in kg — decides the delivery tier (see config/deliveryPricing.js).
+    weightKg: {
+      type: Number,
+      min: [0.01, 'Weight must be greater than 0'],
+      max: [1000, 'Weight looks too high']
+    },
     stock: {
       type: Number,
       required: [true, 'Stock count is required'],

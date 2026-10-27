@@ -14,6 +14,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
 import * as orderApi from '../api/orderApi';
+import * as deliveryApi from '../api/deliveryApi';
 import { colors, spacing, radius, typography } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'IncomingOrders'>;
@@ -91,10 +92,23 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
     ]);
   };
 
-  const handleComplete = async (orderId: string) => {
+  const handleComplete = (order: any) => {
+    const isCash = order.paymentMethod === 'cash';
+    if (isCash) {
+      const due = (order.amountDue ?? order.totalAmount ?? 0).toFixed(2);
+      showAlert('Cash received?', `Confirm you received R${due} cash from the client. RevvUp's 8% commission will be deducted from your earnings.`, [
+        { text: 'Not yet', style: 'cancel' },
+        { text: 'Yes, received', onPress: () => doComplete(order._id, true) }
+      ]);
+    } else {
+      doComplete(order._id, undefined);
+    }
+  };
+
+  const doComplete = async (orderId: string, cashReceived?: boolean) => {
     setActioningId(orderId);
     try {
-      await orderApi.completeServiceOrder(orderId);
+      await orderApi.completeServiceOrder(orderId, cashReceived);
       await loadOrders();
     } catch (error: any) {
       showAlert('Could Not Complete', error?.response?.data?.message || 'Please try again');
@@ -108,7 +122,10 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
     const isPending = item.status === 'pending';
     const isActioning = actioningId === item._id;
     const hasProductItems = item.items.some((line: any) => line.itemType === 'product');
-    const canMarkComplete = item.status === 'confirmed' && item.paymentStatus === 'paid' && !hasProductItems;
+    const isCashOrder = item.paymentMethod === 'cash';
+    const payReady = item.paymentStatus === 'paid' || isCashOrder;
+    const awaitingClient = !!item.providerCompletedAt && !item.clientConfirmedAt && !item.finalizedAt;
+    const canMarkComplete = item.status === 'confirmed' && payReady && !hasProductItems && !item.providerCompletedAt;
 
     return (
       <View style={styles.card}>
@@ -127,10 +144,41 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
           </Text>
         ))}
 
-        <Text style={styles.deliveryText} numberOfLines={2}>
-          📍 {item.deliveryAddress}
+        <Text style={styles.deliveryText} numberOfLines={3}>
+          {item.serviceLocationType === 'at_provider'
+            ? `🚗 Client will bring the vehicle to you (${item.deliveryAddress})`
+            : item.serviceLocationType === 'at_client'
+            ? `📍 Go to the vehicle: ${item.deliveryAddress}`
+            : `📍 Deliver to: ${item.deliveryAddress}`}
         </Text>
         <Text style={styles.phoneText}>📞 {item.contactPhone}</Text>
+
+        {item.deliveryStatus === 'return_to_shop' && (
+          <View style={{ marginTop: 8, padding: 10, borderRadius: 10, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.danger }}>
+            <Text style={{ color: colors.danger, fontWeight: '700' }}>Driver returning this order</Text>
+            <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+              The delivery code was wrong 3 times. Tap below once the driver has brought the items back to you.
+            </Text>
+            <TouchableOpacity
+              style={{ backgroundColor: colors.accent, padding: 10, borderRadius: 8, alignItems: 'center', marginTop: 8 }}
+              onPress={async () => {
+                try {
+                  await deliveryApi.confirmReturned(item.deliveryId);
+                  await loadOrders();
+                } catch (error: any) {
+                  showAlert('Error', error?.response?.data?.message || 'Could not confirm. Try again.');
+                }
+              }}
+            >
+              <Text style={{ color: '#fff', fontWeight: '700' }}>I have received the order back</Text>
+            </TouchableOpacity>
+          </View>
+        )}
+        {item.deliveryStatus === 'returned' && (
+          <Text style={{ color: colors.textMuted, fontSize: 12, marginTop: 6 }}>
+            Returned after a failed delivery — stock restored. Support will follow up with the client.
+          </Text>
+        )}
 
         {isPending && (
           <View style={styles.actionRow}>
@@ -158,7 +206,7 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
         {canMarkComplete && (
           <TouchableOpacity
             style={[styles.acceptButton, { marginTop: spacing.sm }, isActioning && { opacity: 0.6 }]}
-            onPress={() => handleComplete(item._id)}
+            onPress={() => handleComplete(item)}
             disabled={isActioning}
           >
             {isActioning ? (
@@ -169,7 +217,20 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
           </TouchableOpacity>
         )}
 
-        {item.status === 'confirmed' && !hasProductItems && item.paymentStatus !== 'paid' && (
+        {!!item.pointsValue && item.pointsValue > 0 && (
+          <Text style={styles.waitingPaymentText}>⭐ Client redeemed R{item.pointsValue.toFixed(2)} in points (RevvUp covers this).</Text>
+        )}
+        {isCashOrder && (
+          <Text style={styles.waitingPaymentText}>💵 Cash booking — client pays you R{(item.amountDue ?? item.totalAmount ?? 0).toFixed(2)} directly.</Text>
+        )}
+        {awaitingClient && (
+          <Text style={styles.waitingPaymentText}>Waiting for the client to confirm — earnings update once both sides confirm.</Text>
+        )}
+        {item.finalizedAt && (
+          <Text style={styles.waitingPaymentText}>✅ Completed — see the Earnings tab.</Text>
+        )}
+
+        {item.status === 'confirmed' && !hasProductItems && !payReady && (
           <Text style={styles.waitingPaymentText}>Waiting for the client to pay before this can be marked done.</Text>
         )}
       </View>

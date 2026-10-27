@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const { clearanceOkFilter } = require('../config/clearance');
 
 const TEST_MODE = process.env.MATCHING_TEST_MODE === 'true';
 
@@ -60,7 +61,7 @@ const findNearbyMatching = async (baseFilter, point, radiusKm) => {
  * currentLocation/isOnline/isAvailable fields.
  */
 const findNearbyAvailableDrivers = async (point, radiusKm = 15, serviceType) => {
-  const baseFilter = { isOnline: true, isAvailable: true, kycStatus: 'approved' };
+  const baseFilter = { isOnline: true, isAvailable: true, kycStatus: 'approved', ...clearanceOkFilter() };
   baseFilter.roadsideServices = serviceType
     ? serviceType
     : { $exists: true, $not: { $size: 0 } };
@@ -76,7 +77,7 @@ const findNearbyAvailableDrivers = async (point, radiusKm = 15, serviceType) => 
  * be its own separate task. Kept here, ready for when that exists.
  */
 const findNearbyAvailableDeliveryDrivers = async (point, radiusKm = 15) => {
-  const baseFilter = { isOnline: true, isAvailable: true, isDriver: true, kycStatus: 'approved' };
+  const baseFilter = { isOnline: true, isAvailable: true, isDriver: true, kycStatus: 'approved', ...clearanceOkFilter() };
   return findNearbyMatching(baseFilter, point, radiusKm);
 };
 
@@ -89,7 +90,7 @@ const findNearbyAvailableDeliveryDrivers = async (point, radiusKm = 15) => {
  * a delivery job they can't accept.
  */
 const findAvailableDeliveryDrivers = async () => {
-  return User.find({ isOnline: true, isAvailable: true, isDriver: true, kycStatus: 'approved' }).select(SELECT_FIELDS);
+  return User.find({ isOnline: true, isAvailable: true, isDriver: true, kycStatus: 'approved', ...clearanceOkFilter() }).select(SELECT_FIELDS);
 };
 
 module.exports = {

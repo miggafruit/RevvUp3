@@ -9,6 +9,7 @@ import * as businessApi from '../api/businessApi';
 import { ShopListing } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import { isPlayableVideoUrl } from '../utils/video';
+import RewardsBadge from '../components/RewardsBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopDetail'>;
 
@@ -60,6 +61,7 @@ const ShopDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           {hasPromotion && <View style={styles.promoDot} />}
         </View>
         <Text style={styles.shopName}>{shopName}</Text>
+        {(shop as any)?.rewardsActive && <RewardsBadge size="large" />}
         {hasPromotion && (
           <View style={styles.promoBadge}>
             <View style={styles.promoBadgeDot} />
@@ -78,7 +80,7 @@ const ShopDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {!!shop?.profileVideoUrl && (
           isPlayableVideoUrl(shop.profileVideoUrl) ? (
             <View style={styles.videoPreviewWrap}>
-              <VideoView player={videoPlayer} style={styles.videoPreview} contentFit="cover" allowsFullscreen nativeControls />
+              <VideoView player={videoPlayer as any} style={styles.videoPreview} contentFit="cover" {...({ allowsFullscreen: true } as any)} nativeControls />
             </View>
           ) : (
             <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(shop.profileVideoUrl!)}>

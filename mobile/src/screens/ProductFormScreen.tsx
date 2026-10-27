@@ -33,6 +33,7 @@ const ProductFormScreen: React.FC<Props> = ({ navigation, route }) => {
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
   const [stock, setStock] = useState('');
+  const [weightKg, setWeightKg] = useState('');
   const [condition, setCondition] = useState<'Brand New' | 'Used' | 'Refurbished'>('Brand New');
   const [deliveryEstimate, setDeliveryEstimate] = useState('3-5 business days');
   const [specs, setSpecs] = useState<Spec[]>([]);
@@ -50,6 +51,7 @@ const ProductFormScreen: React.FC<Props> = ({ navigation, route }) => {
         setCategory(product.category);
         setDescription(product.description);
         setStock(String(product.stock));
+        setWeightKg(product.weightKg ? String(product.weightKg) : '');
         setCondition(product.condition);
         setDeliveryEstimate(product.deliveryEstimate);
         setSpecs(product.specs || []);
@@ -68,6 +70,7 @@ const ProductFormScreen: React.FC<Props> = ({ navigation, route }) => {
     if (!category.trim()) return 'Please enter a category';
     if (!description.trim()) return 'Please enter a description';
     if (!stock.trim() || isNaN(Number(stock)) || Number(stock) < 0) return 'Please enter a valid stock count';
+    if (!weightKg.trim() || isNaN(Number(weightKg)) || Number(weightKg) <= 0) return 'Please enter the weight of one unit in kg (used to price delivery)';
     const incompleteSpec = specs.some((s) => !s.key.trim() || !s.value.trim());
     if (incompleteSpec) return 'Please fill in or remove incomplete specification rows';
     return null;
@@ -86,6 +89,7 @@ const ProductFormScreen: React.FC<Props> = ({ navigation, route }) => {
       category: category.trim(),
       description: description.trim(),
       stock: Number(stock),
+      weightKg: Number(weightKg),
       condition,
       deliveryEstimate: deliveryEstimate.trim(),
       specs,
@@ -174,6 +178,16 @@ const ProductFormScreen: React.FC<Props> = ({ navigation, route }) => {
             placeholder="e.g. 10"
             placeholderTextColor={colors.textMuted}
             keyboardType="numeric"
+          />
+
+          <Text style={styles.label}>Weight of one unit (kg)</Text>
+          <TextInput
+            style={styles.input}
+            value={weightKg}
+            onChangeText={setWeightKg}
+            placeholder="e.g. 2.5  (delivery is priced by weight)"
+            placeholderTextColor={colors.textMuted}
+            keyboardType="decimal-pad"
           />
 
           <Text style={styles.label}>Condition</Text>

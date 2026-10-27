@@ -1,3 +1,4 @@
+const { requiresPoliceClearance, hasValidClearance, validateIssueDate } = require('../config/clearance');
 const crypto = require('crypto');
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
@@ -25,7 +26,9 @@ const register = async (req, res, next) => {
       isDriver,
       roadsideServices,
       vehicleDetails,
-      bankingDetails
+      bankingDetails,
+      providerType,
+      policeClearance
     } = req.body;
 
     if (!name || !email || !phone || !password || !role) {
@@ -75,6 +78,21 @@ const register = async (req, res, next) => {
           }
         : undefined;
 
+    const resolvedProviderType = role === 'service_provider' && providerType === 'business' ? 'business' : 'individual';
+
+    // If a police clearance date was supplied, it must be genuine-looking and
+    // recent. (Whether one is REQUIRED is enforced at admin approval, so people
+    // can still sign up and add it afterwards.)
+    let clearanceData;
+    if (role === 'service_provider' && policeClearance?.issuedOn) {
+      const dateError = validateIssueDate(policeClearance.issuedOn);
+      if (dateError) return res.status(400).json({ message: dateError });
+      clearanceData = {
+        issuedOn: new Date(policeClearance.issuedOn),
+        referenceNumber: policeClearance.referenceNumber
+      };
+    }
+
     const user = await User.create({
       name,
       email,
@@ -88,6 +106,8 @@ const register = async (req, res, next) => {
       roadsideServices: validRoadsideServices,
       vehicleDetails: offersDispatchableWork ? vehicleDetails : undefined,
       bankingDetails: validBankingDetails,
+      providerType: resolvedProviderType,
+      policeClearance: clearanceData,
       waiverAccepted: true,
       waiverAcceptedAt: new Date(),
       kycDocuments: validKycDocuments,
@@ -322,7 +342,7 @@ const updateProfile = async (req, res, next) => {
 // like the new submission was already reviewed when it hasn't been.
 const resubmitKyc = async (req, res, next) => {
   try {
-    const { kycDocuments } = req.body;
+    const { kycDocuments, policeClearance } = req.body;
 
     const validKycDocuments = Array.isArray(kycDocuments)
       ? kycDocuments.filter((doc) => doc && doc.type && doc.label && doc.image)
@@ -336,8 +356,23 @@ const resubmitKyc = async (req, res, next) => {
     if (user.kycStatus === 'pending') {
       return res.status(400).json({ message: 'Your verification is already under review.' });
     }
-    if (user.kycStatus === 'approved') {
+    // An approved account may only resubmit to renew an expired police clearance.
+    const clearanceExpired = requiresPoliceClearance(user) && !hasValidClearance(user);
+    if (user.kycStatus === 'approved' && !clearanceExpired) {
       return res.status(400).json({ message: "You're already verified — no need to resubmit." });
+    }
+
+    if (policeClearance?.issuedOn) {
+      const dateError = validateIssueDate(policeClearance.issuedOn);
+      if (dateError) return res.status(400).json({ message: dateError });
+      // New certificate details replace the old; verification starts over.
+      user.policeClearance = {
+        issuedOn: new Date(policeClearance.issuedOn),
+        referenceNumber: policeClearance.referenceNumber
+      };
+    }
+    if (requiresPoliceClearance(user) && !validKycDocuments.some((d) => d.type === 'police_clearance') && !user.kycDocuments.some((d) => d.type === 'police_clearance')) {
+      return res.status(400).json({ message: 'Please include your police clearance certificate.' });
     }
 
     user.kycDocuments = validKycDocuments;

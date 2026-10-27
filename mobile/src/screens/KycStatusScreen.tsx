@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { resubmitKyc, getMyBankingDetails, updateProfile } from '../api/authApi';
 import { KycDocument } from '../types/auth';
 import KycUploader from '../components/KycUploader';
+import PoliceClearanceFields, { isValidIsoDate } from '../components/PoliceClearanceFields';
 import { colors } from '../theme/colors';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'KycStatus'>;
@@ -74,16 +75,35 @@ const KycStatusScreen: React.FC<Props> = ({ navigation }) => {
 
   const status = user?.kycStatus || 'not_submitted';
   const meta = STATUS_META[status];
-  const canResubmit = status === 'rejected' || status === 'not_submitted';
+  const canResubmit =
+    status === 'rejected' ||
+    status === 'not_submitted' ||
+    (status === 'approved' && !!user?.policeClearanceRequired && !user?.policeClearanceValid);
+
+  const [clearance, setClearance] = useState({ issuedOn: '', referenceNumber: '' });
+  const needsClearance = !!user?.policeClearanceRequired;
 
   const handleSubmit = async () => {
+    if (needsClearance) {
+      if (!documents.some((d) => d.type === 'police_clearance')) {
+        showAlert('Police clearance needed', 'Please upload your police clearance certificate.');
+        return;
+      }
+      if (!isValidIsoDate(clearance.issuedOn)) {
+        showAlert('Police clearance date', 'Enter the issue date as YYYY-MM-DD, e.g. 2026-10-01.');
+        return;
+      }
+    }
     if (documents.length === 0) {
       showAlert('Add a document', 'Please upload at least one document before submitting.');
       return;
     }
     setIsSubmitting(true);
     try {
-      const updated = await resubmitKyc(documents);
+      const updated = await resubmitKyc(
+        documents,
+        needsClearance ? { issuedOn: clearance.issuedOn, referenceNumber: clearance.referenceNumber.trim() || undefined } : undefined
+      );
       setUser(updated);
       showAlert('Submitted', 'Your documents have been sent for review.', [
         { text: 'OK', onPress: () => navigation.goBack() },
@@ -193,7 +213,9 @@ const KycStatusScreen: React.FC<Props> = ({ navigation }) => {
               documents={documents}
               onChange={setDocuments}
               showVehicleDocument={!!user?.isDriver || (user?.roadsideServices?.length ?? 0) > 0}
+              showPoliceClearance={needsClearance}
             />
+            {needsClearance && <PoliceClearanceFields value={clearance} onChange={setClearance} />}
 
             <TouchableOpacity
               style={[styles.submitButton, isSubmitting && { opacity: 0.6 }]}

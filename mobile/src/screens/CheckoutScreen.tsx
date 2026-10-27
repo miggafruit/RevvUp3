@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -16,6 +16,8 @@ import type { RootStackParamList } from '../types/navigation';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import { useRewards } from '../context/RewardsContext';
+import RewardsBadge from '../components/RewardsBadge';
 import * as orderApi from '../api/orderApi';
 import AddressSearchInput from '../components/AddressSearchInput';
 import { colors, spacing, radius, typography } from '../theme/colors';
@@ -23,30 +25,86 @@ import { colors, spacing, radius, typography } from '../theme/colors';
 type Props = NativeStackScreenProps<RootStackParamList, 'Checkout'>;
 
 const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
-  const { cart, subtotal, deliveryFee, total, clear } = useCart();
+  const { cart, subtotal, seller, clear } = useCart();
   const { user } = useAuth();
 
   const [deliveryAddress, setDeliveryAddress] = useState('');
   const [contactPhone, setContactPhone] = useState(user?.phone || '');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [quote, setQuote] = useState<orderApi.DeliveryQuote | null>(null);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
+  const [isQuoting, setIsQuoting] = useState(false);
+  const { summary: rewards } = useRewards();
+  const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
+  const [usePoints, setUsePoints] = useState(false);
+  const hasProducts = cart.items.some((i) => i.itemType === 'product');
+  const isServiceOrder = !hasProducts && cart.items.length > 0;
+  // Services: does the provider come to the vehicle, or does the client bring it?
+  const [serviceLocationType, setServiceLocationType] = useState<'at_client' | 'at_provider'>('at_client');
+  const bringingToProvider = isServiceOrder && serviceLocationType === 'at_provider';
+
+  // Delivery depends on the address, so it is priced from the server as soon
+  // as a plausible address is entered (debounced while typing).
+  useEffect(() => {
+    setQuote(null);
+    setQuoteError(null);
+    if (!hasProducts || deliveryAddress.trim().length < 8) return;
+    let cancelled = false;
+    setIsQuoting(true);
+    const t = setTimeout(async () => {
+      try {
+        const q = await orderApi.getDeliveryQuote(deliveryAddress.trim());
+        if (!cancelled) setQuote(q);
+      } catch (error: any) {
+        if (!cancelled) setQuoteError(error?.response?.data?.message || 'Could not calculate delivery for this address.');
+      } finally {
+        if (!cancelled) setIsQuoting(false);
+      }
+    }, 700);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [deliveryAddress, hasProducts]);
+
+  const shownDeliveryFee = hasProducts ? quote?.deliveryFee ?? 0 : 0;
+  const shownTotal = subtotal + shownDeliveryFee;
+  const sellerRewards = !!seller?.rewardsActive;
+  const pointsBalance = rewards?.points ?? 0;
+  const canRedeem = isServiceOrder && sellerRewards && pointsBalance > 0;
+  // 10 points = R1, capped at the order total
+  const pointsToUse = usePoints && canRedeem ? Math.min(pointsBalance, Math.floor(shownTotal * 10)) : 0;
+  const pointsValueRand = pointsToUse / 10;
+  const amountToPay = Math.max(0, shownTotal - pointsValueRand);
+  const earnPoints = sellerRewards ? Math.floor(((subtotal * 0.02) / 0.1)) : 0;
 
   const handlePlaceOrder = async () => {
-    if (!deliveryAddress.trim()) {
-      showAlert('Missing Information', 'Please enter a delivery address');
+    if (!bringingToProvider && !deliveryAddress.trim()) {
+      showAlert(
+        'Missing Information',
+        isServiceOrder ? 'Please tell the provider where the vehicle is' : 'Please enter a delivery address'
+      );
       return;
     }
     if (!contactPhone.trim()) {
       showAlert('Missing Information', 'Please enter a contact phone number');
       return;
     }
+    if (hasProducts && !quote) {
+      showAlert('Delivery not priced yet', quoteError || 'Please wait while we calculate delivery for your address.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
       const order = await orderApi.checkout({
-        deliveryAddress: deliveryAddress.trim(),
+        deliveryAddress: bringingToProvider ? undefined : deliveryAddress.trim(),
+        serviceLocationType: isServiceOrder ? serviceLocationType : undefined,
         contactPhone: contactPhone.trim(),
-        notes: notes.trim() || undefined
+        notes: notes.trim() || undefined,
+        paymentMethod: isServiceOrder ? paymentMethod : undefined,
+        redeemPoints: pointsToUse > 0 ? pointsToUse : undefined
       });
       await clear();
       navigation.replace('OrderConfirmation', { orderId: order._id });
@@ -91,21 +149,135 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
               <Text style={styles.summaryRowLabel}>Subtotal</Text>
               <Text style={styles.summaryRowValue}>R {subtotal.toLocaleString()}</Text>
             </View>
-            {deliveryFee > 0 && (
+            {hasProducts && (
               <View style={styles.summaryRow}>
-                <Text style={styles.summaryRowLabel}>Delivery</Text>
-                <Text style={styles.summaryRowValue}>R {deliveryFee.toLocaleString()}</Text>
+                <Text style={styles.summaryRowLabel}>
+                  Delivery{quote ? ` (${quote.distanceKm} km, ${quote.totalWeightKg} kg)` : ''}
+                </Text>
+                <Text style={styles.summaryRowValue}>
+                  {quote
+                    ? `R ${quote.deliveryFee.toLocaleString()}`
+                    : isQuoting
+                    ? 'Calculating…'
+                    : quoteError
+                    ? 'Unavailable'
+                    : 'Enter address'}
+                </Text>
               </View>
             )}
+            {quoteError && <Text style={{ color: colors.danger, fontSize: 12, marginTop: 4 }}>{quoteError}</Text>}
             <View style={styles.summaryRow}>
               <Text style={styles.totalLabel}>Total</Text>
-              <Text style={styles.totalValue}>R {total.toLocaleString()}</Text>
+              <Text style={styles.totalValue}>R {shownTotal.toLocaleString()}</Text>
             </View>
           </View>
 
-          <Text style={styles.sectionTitle}>Delivery Details</Text>
+          {sellerRewards && (
+            <View style={{ marginBottom: spacing.md }}>
+              <RewardsBadge size="large" />
+              {earnPoints > 0 && (
+                <Text style={{ color: colors.textSecondary, marginTop: 6, fontSize: 12 }}>
+                  You will earn about {earnPoints} points when this order is completed.
+                </Text>
+              )}
+            </View>
+          )}
 
-          <Text style={styles.label}>Delivery Address</Text>
+          {isServiceOrder && (
+            <View style={{ marginBottom: spacing.md }}>
+              <Text style={styles.sectionTitle}>Payment</Text>
+              <View style={{ flexDirection: 'row', gap: 8 }}>
+                {(['card', 'cash'] as const).map((m) => (
+                  <TouchableOpacity
+                    key={m}
+                    onPress={() => setPaymentMethod(m)}
+                    style={{
+                      flex: 1, padding: 12, borderRadius: radius.md ?? 10, borderWidth: 2, alignItems: 'center',
+                      borderColor: paymentMethod === m ? colors.accent : colors.border ?? '#444'
+                    }}
+                  >
+                    <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{m === 'card' ? '💳 Pay online' : '💵 Cash'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {paymentMethod === 'cash' && (
+                <Text style={{ color: colors.textSecondary, marginTop: 6, fontSize: 12 }}>
+                  Pay the provider in cash after the work is done, then confirm in the app. Both sides must confirm.
+                </Text>
+              )}
+              {canRedeem && (
+                <TouchableOpacity
+                  onPress={() => setUsePoints((v) => !v)}
+                  style={{ marginTop: 10, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: usePoints ? '#FACC15' : colors.border ?? '#444' }}
+                >
+                  <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>
+                    {usePoints ? '✅' : '⭐'} Use my points ({pointsBalance} pts = R{(pointsBalance / 10).toFixed(2)})
+                  </Text>
+                  {usePoints && (
+                    <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
+                      Using {pointsToUse} pts · saves R{pointsValueRand.toFixed(2)}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              )}
+              {isServiceOrder && !sellerRewards && pointsBalance > 0 && (
+                <Text style={{ color: colors.textSecondary, marginTop: 8, fontSize: 12 }}>
+                  Points can only be used with providers showing the ⭐ REWARDS badge.
+                </Text>
+              )}
+            </View>
+          )}
+
+          <Text style={styles.sectionTitle}>{isServiceOrder ? 'Service Location' : 'Delivery Details'}</Text>
+
+          {isServiceOrder && (
+            <>
+              <View style={{ flexDirection: 'row', gap: 8, marginBottom: 12 }}>
+                {([
+                  ['at_client', 'Come to my vehicle'],
+                  ['at_provider', "I'll bring it to them"]
+                ] as const).map(([value, label]) => {
+                  const active = serviceLocationType === value;
+                  return (
+                    <TouchableOpacity
+                      key={value}
+                      onPress={() => setServiceLocationType(value)}
+                      style={{
+                        flex: 1,
+                        padding: 12,
+                        borderRadius: 10,
+                        borderWidth: 1,
+                        borderColor: active ? colors.accent : colors.border,
+                        backgroundColor: active ? colors.accent : colors.surface,
+                        alignItems: 'center'
+                      }}
+                    >
+                      <Text style={{ color: active ? '#fff' : colors.textPrimary, fontWeight: '700', textAlign: 'center' }}>
+                        {label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+              {bringingToProvider && (
+                <View style={{ padding: 12, borderRadius: 10, backgroundColor: colors.surface, marginBottom: 12 }}>
+                  <Text style={{ color: colors.textSecondary, fontSize: 12 }}>
+                    You will take your vehicle to {seller?.businessName || 'the provider'}. They'll be told you're
+                    bringing it in.
+                  </Text>
+                  <Text style={{ color: colors.textPrimary, fontWeight: '700', marginTop: 6 }}>
+                    📍 {seller?.businessAddress || 'Address will be shown once the provider accepts'}
+                  </Text>
+                </View>
+              )}
+            </>
+          )}
+
+          {!bringingToProvider && (
+          <>
+          <Text style={styles.label}>
+            {isServiceOrder ? 'Where is the vehicle? (address the work happens at)' : 'Delivery Address'}
+          </Text>
           <AddressSearchInput
             value={deliveryAddress}
             onChangeText={setDeliveryAddress}
@@ -120,6 +292,8 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
               predictionSecondary: colors.textSecondary,
             }}
           />
+          </>
+          )}
 
           <Text style={styles.label}>Contact Phone</Text>
           <TextInput
@@ -156,7 +330,7 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
             {isSubmitting ? (
               <ActivityIndicator color={colors.white} />
             ) : (
-              <Text style={styles.placeOrderButtonText}>Place Order · R {total.toLocaleString()}</Text>
+              <Text style={styles.placeOrderButtonText}>Place Order · R {amountToPay.toLocaleString()}</Text>
             )}
           </TouchableOpacity>
         </ScrollView>

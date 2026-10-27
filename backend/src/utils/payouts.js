@@ -13,16 +13,22 @@ const { reportSilentFailure } = require('./reportSilentFailure');
  * double-crediting the same event twice — this just means a retried
  * request doesn't crash instead of being correctly ignored).
  */
-const createPayoutEntry = async ({ recipient, amount: grossAmount, sourceType, sourceId }) => {
+const createPayoutEntry = async ({ recipient, amount: grossAmount, sourceType, sourceId, cashHeld = 0 }) => {
   if (!grossAmount || grossAmount <= 0) return; // nothing owed, nothing to record
-  const { platformCut, payoutAmount } = applyCommission(grossAmount);
-  if (payoutAmount <= 0) return;
+  const { platformCut, payoutAmount: afterCommission } = applyCommission(grossAmount);
+  // If the provider already took cash from the client, that cash is netted off
+  // what RevvUp owes them. A cash job therefore usually becomes a NEGATIVE
+  // entry (the provider owes RevvUp its commission).
+  const payoutAmount = Math.round((afterCommission - cashHeld) * 100) / 100;
+  if (payoutAmount === 0) return;
+  if (payoutAmount < 0 && !cashHeld) return;
   try {
     await PayoutEntry.create({
       recipient,
       amount: payoutAmount,
       grossAmount,
       platformCut,
+      cashHeld: cashHeld || undefined,
       sourceType,
       sourceId
     });

@@ -2,6 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import { Service } from '../types/marketplace';
+import RewardsBadge from './RewardsBadge';
 
 interface ServiceCardProps {
   service: Service;
@@ -27,6 +28,7 @@ const ServiceCard: React.FC<ServiceCardProps> = ({ service, onPress, onAddToCart
         <Text style={styles.name} numberOfLines={1}>
           {service.name}
         </Text>
+        {service.sellerRewardsActive && <RewardsBadge />}
         <Text style={styles.price}>R {service.price.toLocaleString()}</Text>
         <Text style={styles.duration} numberOfLines={1}>
           {service.durationEstimate}

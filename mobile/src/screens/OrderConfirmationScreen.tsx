@@ -1,8 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator, Animated, Easing } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, Animated, Easing } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
+import * as orderApi from '../api/orderApi';
 import { getOrderById } from '../api/orderApi';
+import { showAlert } from '../utils/crossPlatformAlert';
 import { Order } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
 
@@ -14,6 +17,7 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
   const { orderId } = route.params;
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [confirming, setConfirming] = useState(false);
 
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -84,7 +88,34 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
   }
 
   const isPending = order.status === 'pending';
-  const isAwaitingPayment = order.status === 'confirmed' && order.paymentStatus !== 'paid';
+  const isCash = order.paymentMethod === 'cash';
+  const amountDue = order.amountDue ?? order.totalAmount;
+  const isAwaitingPayment = order.status === 'confirmed' && order.paymentStatus !== 'paid' && !isCash;
+  const isCashBooked = order.status === 'confirmed' && isCash;
+  const needsClientConfirm =
+    !!order.providerCompletedAt && !order.clientConfirmedAt && order.status !== 'cancelled' && !order.finalizedAt;
+  const handleClientConfirm = async () => {
+    const send = async () => {
+      setConfirming(true);
+      try {
+        await orderApi.confirmServiceOrder(order._id, isCash ? true : undefined);
+        const fresh = await getOrderById(order._id);
+        setOrder(fresh);
+      } catch (e: any) {
+        showAlert('Could Not Confirm', e?.response?.data?.message || 'Please try again');
+      } finally {
+        setConfirming(false);
+      }
+    };
+    if (isCash) {
+      showAlert('Confirm cash payment', `Confirm that you paid R${amountDue.toFixed(2)} in cash and the work is done.`, [
+        { text: 'Not yet', style: 'cancel' },
+        { text: 'Yes, confirm', onPress: send }
+      ]);
+    } else {
+      send();
+    }
+  };
   // Only true once payment has actually gone through — this is the sole
   // condition that reveals the Track Delivery button below.
   const isPaidConfirmed = (order.status === 'confirmed' || order.status === 'completed') && order.paymentStatus === 'paid';
@@ -126,7 +157,11 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
             <Text style={styles.checkmark}>✓</Text>
             <Text style={styles.title}>Order Confirmed!</Text>
             <Text style={styles.subtitle}>
-              Payment received. The seller will be in touch to arrange delivery.
+              {hasProductItems
+                ? "Payment received. We're finding a delivery driver for your order — tap Track Delivery to follow it live."
+                : order.serviceLocationType === 'at_provider'
+                ? 'Payment received. Take your vehicle to the provider at the address below at the agreed time.'
+                : 'Payment received. The provider will come to your vehicle at the address below.'}
             </Text>
           </>
         )}
@@ -147,10 +182,34 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
             <Text style={styles.summaryLabel}>Order ID</Text>
             <Text style={styles.summaryValue}>{order._id.slice(-8).toUpperCase()}</Text>
           </View>
+          {!!order.serviceLocationType && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>
+                {order.serviceLocationType === 'at_provider' ? 'Take vehicle to' : 'Service at'}
+              </Text>
+              <Text style={[styles.summaryValue, { flexShrink: 1, textAlign: 'right' }]}>{order.deliveryAddress}</Text>
+            </View>
+          )}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Total</Text>
             <Text style={styles.summaryValue}>R {order.totalAmount.toLocaleString()}</Text>
           </View>
+          {!!order.pointsValue && order.pointsValue > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Paid with points ⭐</Text>
+              <Text style={styles.summaryValue}>- R {order.pointsValue.toFixed(2)}</Text>
+            </View>
+          )}
+          <View style={styles.summaryRow}>
+            <Text style={styles.summaryLabel}>{isCash ? 'Cash to pay provider' : 'To pay'}</Text>
+            <Text style={styles.summaryValue}>R {amountDue.toFixed(2)}</Text>
+          </View>
+          {!!order.pointsEarned && order.pointsEarned > 0 && (
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Points earned 🎉</Text>
+              <Text style={styles.summaryValue}>+{order.pointsEarned}</Text>
+            </View>
+          )}
           <View style={styles.summaryRow}>
             <Text style={styles.summaryLabel}>Status</Text>
             <Text
@@ -166,12 +225,30 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
         </View>
 
+        {isCashBooked && !needsClientConfirm && (
+          <Text style={[styles.subtitle, { marginBottom: spacing.md }]}>
+            Cash booking: pay the provider R {amountDue.toFixed(2)} in cash once the work is done, then confirm here.
+          </Text>
+        )}
+
+        {needsClientConfirm && (
+          <TouchableOpacity
+            style={[styles.doneButton, { marginBottom: spacing.md }, confirming && { opacity: 0.6 }]}
+            onPress={handleClientConfirm}
+            disabled={confirming}
+          >
+            <Text style={styles.doneButtonText}>
+              {isCash ? `Confirm done & cash paid · R ${amountDue.toFixed(2)}` : 'Confirm service done'}
+            </Text>
+          </TouchableOpacity>
+        )}
+
         {isAwaitingPayment && (
           <TouchableOpacity
             style={styles.doneButton}
             onPress={() => navigation.navigate('Payment', { orderId: order._id })}
           >
-            <Text style={styles.doneButtonText}>Pay Now · R {order.totalAmount.toLocaleString()}</Text>
+            <Text style={styles.doneButtonText}>Pay Now · R {amountDue.toFixed(2)}</Text>
           </TouchableOpacity>
         )}
 

@@ -35,9 +35,10 @@ export const getKycDetail = async (userId: string): Promise<KycQueueItem & { kyc
 export const reviewKyc = async (
   userId: string,
   status: 'approved' | 'rejected',
-  note?: string
+  note?: string,
+  clearanceVerified?: boolean
 ): Promise<void> => {
-  await apiClient.patch(`/admin/kyc/${userId}`, { status, note });
+  await apiClient.patch(`/admin/kyc/${userId}`, { status, note, clearanceVerified });
 };
 
 export const getUsers = async (params: {

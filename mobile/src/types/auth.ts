@@ -9,6 +9,7 @@ export interface KycDocument {
     | 'drivers_license'
     | 'business_registration'
     | 'vehicle_registration'
+    | 'police_clearance'
     | 'other';
   label: string;
   image: string;
@@ -38,6 +39,13 @@ export interface User {
   isDriver?: boolean;
   roadsideServices?: string[];
   vehicleDetails?: VehicleDetails;
+  providerType?: 'individual' | 'business';
+  rewardPoints?: number;
+  rewardsActive?: boolean;
+  rewardsActiveUntil?: string;
+  policeClearanceRequired?: boolean;
+  policeClearanceValid?: boolean;
+  policeClearanceIssuedOn?: string;
   waiverAccepted: boolean;
   kycStatus?: KycStatus;
   kycReviewNote?: string;
@@ -75,6 +83,8 @@ export interface RegisterPayload {
   roadsideServices?: string[];
   vehicleDetails?: VehicleDetails;
   bankingDetails?: BankingDetails;
+  providerType?: 'individual' | 'business';
+  policeClearance?: { issuedOn: string; referenceNumber?: string };
 }
 
 export interface LoginPayload {

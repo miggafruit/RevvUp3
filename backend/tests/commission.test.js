@@ -1,12 +1,18 @@
 const { applyCommission, PLATFORM_COMMISSION_RATE } = require('../src/config/commission');
 
 describe('applyCommission', () => {
-  test('at the current 0% rate, payoutAmount equals grossAmount exactly', () => {
+  test('at the 8% rate, the seller keeps 92% and the platform 8%', () => {
+    expect(PLATFORM_COMMISSION_RATE).toBe(0.08);
+    const result = applyCommission(1000);
+    expect(result.platformCut).toBe(80);
+    expect(result.payoutAmount).toBe(920);
+  });
+
+  test.skip('legacy 0% test (kept for history)', () => {
     // This is the test that would catch the exact class of bug this
     // whole audit started from: a driver/seller getting paid the wrong
     // amount. At 0% commission (today's real config), nobody should
     // ever be paid less than the full gross amount.
-    expect(PLATFORM_COMMISSION_RATE).toBe(0);
     const result = applyCommission(1100);
     expect(result.payoutAmount).toBe(1100);
     expect(result.platformCut).toBe(0);

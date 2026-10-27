@@ -132,6 +132,8 @@ export const useEHailingEvents = (events: {
   onDeliveryLocationUpdate?: (data: { delivery_id: string; latitude: number; longitude: number }) => void;
   onDeliveryPickedUp?: (data: { delivery_id: string }) => void;
   onDeliveryCompleted?: (data: { delivery_id: string }) => void;
+  onDeliveryReturnToShop?: (data: { delivery_id: string }) => void;
+  onDeliveryReturned?: (data: { delivery_id: string }) => void;
   onDeliveryTaken?: (data: { delivery_id: string }) => void;
 }) => {
   const { socket } = useEHailingSocketConnection();
@@ -153,6 +155,8 @@ export const useEHailingEvents = (events: {
       ['delivery_location_update', events.onDeliveryLocationUpdate],
       ['delivery_picked_up', events.onDeliveryPickedUp],
       ['delivery_completed', events.onDeliveryCompleted],
+      ['delivery_return_to_shop', events.onDeliveryReturnToShop],
+      ['delivery_returned', events.onDeliveryReturned],
       ['delivery_taken', events.onDeliveryTaken],
     ];
 

@@ -1,4 +1,6 @@
 const User = require('../models/User');
+const RewardsPayment = require('../models/RewardsPayment');
+const { requiresPoliceClearance, validateIssueDate, clearanceCutoff } = require('../config/clearance');
 const Ride = require('../models/Ride');
 const Delivery = require('../models/Delivery');
 const Order = require('../models/Order');
@@ -60,7 +62,7 @@ const getKycDetail = async (req, res, next) => {
     // individually rather than alongside the parent field, to avoid
     // the same path-collision 500.
     const user = await User.findById(req.params.userId).select(
-      'name email phone role businessName businessAddress category kycDocuments kycStatus createdAt ' +
+      'name email phone role businessName businessAddress category kycDocuments kycStatus createdAt providerType isDriver roadsideServices policeClearance ' +
       'bankingDetails.accountHolder bankingDetails.bankName bankingDetails.branchCode bankingDetails.accountType ' +
       '+bankingDetails.accountNumber'
     );
@@ -78,7 +80,7 @@ const getKycDetail = async (req, res, next) => {
 // body: { status: 'approved' | 'rejected', note? }
 const reviewKyc = async (req, res, next) => {
   try {
-    const { status, note } = req.body;
+    const { status, note, clearanceVerified } = req.body;
     if (!['approved', 'rejected'].includes(status)) {
       return res.status(400).json({ message: "status must be 'approved' or 'rejected'" });
     }
@@ -103,6 +105,29 @@ const reviewKyc = async (req, res, next) => {
           message: 'This account is missing banking details — ask them to add banking details before approving.'
         });
       }
+    }
+
+    // Police clearance gate: individuals and every driver can't be approved
+    // until an admin has actually read the certificate and confirmed it.
+    if (status === 'approved' && requiresPoliceClearance(user)) {
+      const hasDoc = user.kycDocuments.some((d) => d.type === 'police_clearance');
+      if (!hasDoc || !user.policeClearance?.issuedOn) {
+        return res.status(400).json({
+          message: 'A police clearance certificate and its issue date are required for this account before it can be approved.'
+        });
+      }
+      const dateError = validateIssueDate(user.policeClearance.issuedOn);
+      const ageOk = new Date(user.policeClearance.issuedOn) >= clearanceCutoff();
+      if (!ageOk) {
+        return res.status(400).json({ message: 'The police clearance on file has expired — ask them to submit a new one.' });
+      }
+      if (clearanceVerified !== true) {
+        return res.status(400).json({
+          message: 'Confirm that you have checked the police clearance certificate before approving.'
+        });
+      }
+      user.policeClearance.verifiedAt = new Date();
+      user.policeClearance.verifiedBy = req.user._id;
     }
 
     user.kycStatus = status;
@@ -439,7 +464,17 @@ const getRevenue = async (req, res, next) => {
     const [commissionTotal] = await PayoutEntry.aggregate([
       { $group: { _id: null, total: { $sum: { $ifNull: ['$platformCut', 0] } } } }
     ]);
-    const platformEarnings = (commissionTotal?.total || 0) + promotionsTotal;
+    const [subs] = await RewardsPayment.aggregate([{ $group: { _id: null, total: { $sum: '$amount' } } }]);
+    const [redeemed] = await Order.aggregate([
+      { $match: { finalizedAt: { $exists: true }, pointsValue: { $gt: 0 } } },
+      { $group: { _id: null, total: { $sum: '$pointsValue' } } }
+    ]);
+    const rewardsSubscriptions = subs?.total || 0;
+    const rewardsRedeemed = redeemed?.total || 0;
+    // Commission + promotions + R150 memberships, minus the value of points
+    // RevvUp paid out to providers on clients' behalf (rewards are funded from
+    // RevvUp's own share).
+    const platformEarnings = (commissionTotal?.total || 0) + promotionsTotal + rewardsSubscriptions - rewardsRedeemed;
 
     res.status(200).json({
       total: ridesTotal + ordersTotal + promotionsTotal,
@@ -456,6 +491,8 @@ const getRevenue = async (req, res, next) => {
       // probably be renamed to once the frontend is updated to show
       // both numbers clearly.
       platformEarnings,
+      rewardsSubscriptions,
+      rewardsRedeemed,
       dailySeries
     });
   } catch (error) {

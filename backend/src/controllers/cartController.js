@@ -1,7 +1,8 @@
 const Cart = require('../models/Cart');
 const Product = require('../models/Product');
 const Service = require('../models/Service');
-const { getDeliveryFee } = require('../config/deliveryPricing');
+const User = require('../models/User');
+const { visibleShopFilter, visibleProviderFilter } = require('../utils/sellerVisibility');
 
 const getOrCreateCart = async (clientId) => {
   let cart = await Cart.findOne({ client: clientId });
@@ -45,10 +46,26 @@ const getCart = async (req, res, next) => {
       return sum + (unitPrice || 0) * item.quantity;
     }, 0);
     const hasProductItems = cart.items.some((item) => item.itemType === 'product');
-    const deliveryFee = getDeliveryFee(hasProductItems);
-    const total = subtotal + deliveryFee;
+    // Delivery depends on the drop-off address, which isn't known until
+    // checkout — so the cart shows items only and flags that delivery
+    // will be priced there (see orderController.getCheckoutQuote).
+    // For service carts the checkout screen needs the provider's workshop
+    // address (for the "I'll bring my vehicle to you" option).
+    let seller = null;
+    const firstService = cart.items.find((i) => i.itemType === 'service' && i.service);
+    if (firstService) {
+      const sellerDoc = await User.findById(firstService.service.provider).select('businessName businessAddress rewardsProgram');
+      if (sellerDoc) {
+        seller = {
+          businessName: sellerDoc.businessName,
+          businessAddress: sellerDoc.businessAddress,
+          // Points can only be spent here if the provider is in the rewards programme.
+          rewardsActive: !!(sellerDoc.rewardsProgram?.activeUntil && sellerDoc.rewardsProgram.activeUntil > new Date())
+        };
+      }
+    }
 
-    res.status(200).json({ cart, subtotal, deliveryFee, total });
+    res.status(200).json({ cart, subtotal, deliveryFee: 0, deliveryPending: hasProductItems, total: subtotal, seller });
   } catch (error) {
     next(error);
   }
@@ -82,6 +99,15 @@ const addItemToCart = async (req, res, next) => {
     const Model = itemType === 'product' ? Product : Service;
     const item = await Model.findById(itemId);
     if (!item || !item.isActive) {
+      return res.status(404).json({ message: `${itemType} not found` });
+    }
+    // Hidden listings (seller not admin-approved / clearance missing) can't be
+    // bought even by someone who has the id.
+    const sellerOk = await User.exists({
+      _id: itemType === 'product' ? item.shop : item.provider,
+      ...(itemType === 'product' ? visibleShopFilter() : visibleProviderFilter())
+    });
+    if (!sellerOk) {
       return res.status(404).json({ message: `${itemType} not found` });
     }
 

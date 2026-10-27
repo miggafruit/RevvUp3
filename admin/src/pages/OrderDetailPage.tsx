@@ -51,7 +51,11 @@ const OrderDetailPage: React.FC = () => {
 
       <div className="bg-surface border border-border rounded-xl p-5 mb-4">
         <h2 className="text-sm font-semibold mb-2">Delivery</h2>
-        <InfoRow label="Address" value={order.deliveryAddress} />
+        <InfoRow
+          label={order.serviceLocationType === 'at_provider' ? 'Provider workshop (client brings vehicle)' : order.serviceLocationType === 'at_client' ? 'Vehicle / work location' : 'Delivery address'}
+          value={order.deliveryAddress}
+        />
+        <InfoRow label="Needs attention" value={order.deliveryIssue ? "Delivery code failed 3 times — order returned to shop. Decide on refund." : undefined} />
         <InfoRow label="Contact phone" value={order.contactPhone} />
         <InfoRow label="Payment" value={order.paymentStatus} />
         <InfoRow label="Delivery fee" value={order.deliveryFee ? `R${order.deliveryFee}` : undefined} />

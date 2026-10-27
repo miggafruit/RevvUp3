@@ -1,13 +1,14 @@
 {
   "expo": {
-    "name": "mobile",
+    "name": "RevvUp",
     "slug": "mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.oneil23.mobile"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +30,12 @@
         {
           "iosGoogleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY",
           "androidGoogleMapsApiKey": "YOUR_GOOGLE_MAPS_API_KEY"
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "RevvUp uses your location to find nearby roadside help, match deliveries and show live tracking."
         }
       ],
       [

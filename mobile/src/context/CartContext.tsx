@@ -7,6 +7,7 @@ interface CartContextValue {
   subtotal: number;
   deliveryFee: number;
   total: number;
+  seller: { businessName?: string; businessAddress?: string; rewardsActive?: boolean } | null;
   itemCount: number;
   isLoading: boolean;
   refreshCart: () => Promise<void>;
@@ -23,6 +24,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
   const [subtotal, setSubtotal] = useState(0);
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [total, setTotal] = useState(0);
+  const [seller, setSeller] = useState<{ businessName?: string; businessAddress?: string; rewardsActive?: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const refreshCart = useCallback(async () => {
@@ -33,6 +35,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
       setSubtotal(data.subtotal);
       setDeliveryFee(data.deliveryFee);
       setTotal(data.total);
+      setSeller(data.seller ?? null);
     } catch (error) {
       console.warn('Failed to refresh cart', error);
     } finally {
@@ -77,7 +80,7 @@ export const CartProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <CartContext.Provider
-      value={{ cart, subtotal, deliveryFee, total, itemCount, isLoading, refreshCart, addItem, updateItem, removeItem, clear }}
+      value={{ cart, subtotal, deliveryFee, total, seller, itemCount, isLoading, refreshCart, addItem, updateItem, removeItem, clear }}
     >
       {children}
     </CartContext.Provider>

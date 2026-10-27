@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, SafeAreaView, Image, ScrollView, Linking } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Image, ScrollView, Linking } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 import type { RootStackParamList } from '../types/navigation';
@@ -8,6 +9,7 @@ import * as businessApi from '../api/businessApi';
 import { ProviderListing } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import { isPlayableVideoUrl } from '../utils/video';
+import RewardsBadge from '../components/RewardsBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProviderDetail'>;
 
@@ -62,6 +64,7 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
           {hasPromotion && <View style={styles.promoDot} />}
         </View>
         <Text style={styles.providerName}>{providerName}</Text>
+        {(provider as any)?.rewardsActive && <RewardsBadge size="large" />}
         {hasPromotion && (
           <View style={styles.promoBadge}>
             <View style={styles.promoBadgeDot} />
@@ -80,7 +83,7 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {!!provider?.profileVideoUrl && (
           isPlayableVideoUrl(provider.profileVideoUrl) ? (
             <View style={styles.videoPreviewWrap}>
-              <VideoView player={videoPlayer} style={styles.videoPreview} contentFit="cover" allowsFullscreen nativeControls />
+              <VideoView player={videoPlayer as any} style={styles.videoPreview} contentFit="cover" {...({ allowsFullscreen: true } as any)} nativeControls />
             </View>
           ) : (
             <TouchableOpacity style={styles.videoLink} onPress={() => Linking.openURL(provider.profileVideoUrl!)}>

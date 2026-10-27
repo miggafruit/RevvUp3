@@ -1,3 +1,4 @@
+const { requiresPoliceClearance, hasValidClearance } = require('../config/clearance');
 const Ride = require('../models/Ride');
 const User = require('../models/User');
 const { getDistanceAndDuration } = require('../utils/distance');
@@ -9,6 +10,7 @@ const { sendPushNotifications } = require('../utils/pushNotifications');
 const { clientRoomId } = require('../utils/socketHelpers');
 const { createPayoutEntry } = require('../utils/payouts');
 const { amountMatchesExpected } = require('../utils/paymentVerification');
+const { isTestReference, isTestPaymentAllowedFor, buildTestVerification } = require('../utils/testPayments');
 const { reportSilentFailure } = require('../utils/reportSilentFailure');
 
 const TOW_SERVICE_TYPES = ['tow_sling', 'tow_rollback'];
@@ -316,8 +318,8 @@ const acceptRequest = async (req, res, next) => {
     // endpoint some other way (a stale cached list, a direct API call)
     // rather than trusting that the driver in front of us was actually
     // in the matched set.
-    if (req.user.kycStatus !== 'approved') {
-      return res.status(403).json({ success: false, message: 'Your account needs to complete verification before accepting jobs.' });
+    if (req.user.kycStatus !== 'approved' || (requiresPoliceClearance(req.user) && !hasValidClearance(req.user))) {
+      return res.status(403).json({ success: false, message: 'Your account needs complete, current verification (including a verified police clearance) before accepting jobs.' });
     }
 
     // Driver's current location is still worth capturing for live
@@ -670,7 +672,13 @@ const payRide = async (req, res, next) => {
     }
 
     let verification;
-    try {
+    if (isTestReference(paymentReference)) {
+      // Temporary tester-only path — see utils/testPayments.js.
+      if (!isTestPaymentAllowedFor(req.user)) {
+        return res.status(403).json({ success: false, message: 'Test payments are not enabled for this account.' });
+      }
+      verification = buildTestVerification('rideId', ride._id, ride.fare);
+    } else try {
       verification = await verifyPaystackTransaction(paymentReference);
     } catch (verifyError) {
       console.error('Paystack verification request failed:', verifyError?.response?.data || verifyError.message);

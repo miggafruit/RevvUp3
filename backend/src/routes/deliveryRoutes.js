@@ -8,7 +8,9 @@ const {
   updateDeliveryLocation,
   markPickedUp,
   markDelivered,
-  getDeliveryByOrder
+  getDeliveryByOrder,
+  confirmReturned,
+  testAdvanceDelivery
 } = require('../controllers/deliveryController');
 
 router.get('/pending', protect, authorize('service_provider'), getPendingDeliveries);
@@ -17,6 +19,8 @@ router.post('/:id/accept', protect, authorize('service_provider'), acceptDeliver
 router.post('/:id/location', protect, authorize('service_provider'), updateDeliveryLocation);
 router.post('/:id/picked-up', protect, authorize('service_provider'), markPickedUp);
 router.post('/:id/delivered', protect, authorize('service_provider'), markDelivered);
+router.post('/:id/test-advance', protect, authorize('client'), testAdvanceDelivery);
+router.post('/:id/confirm-returned', protect, authorize('shop'), confirmReturned);
 router.get('/order/:orderId', protect, getDeliveryByOrder);
 
 module.exports = router;
