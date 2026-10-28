@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const { isTestPaymentAllowedFor } = require('../utils/testPayments');
 const { requiresPoliceClearance, hasValidClearance } = require('../config/clearance');
 const Delivery = require('../models/Delivery');
@@ -7,6 +8,13 @@ const { findAvailableDeliveryDrivers } = require('../utils/matching');
 const { sendPushNotifications } = require('../utils/pushNotifications');
 const { createPayoutEntry } = require('../utils/payouts');
 const { afterProductDelivered } = require('../services/orderFinalization');
+
+// The driver gets this many tries at the client's 4-digit code before the
+// parcel must be taken back to the shop.
+const MAX_CODE_ATTEMPTS = 3;
+
+// Random 4-digit proof-of-delivery code (0000-9999, zero-padded).
+const generateCode = () => String(crypto.randomInt(0, 10000)).padStart(4, '0');
 
 /**
  * Sends a push to a delivery's client. Deliberately does its own
@@ -52,6 +60,7 @@ const createDeliveryForOrder = async (order, io) => {
       quantity: item.quantity
     })),
     totalAmount: order.totalAmount,
+    deliveryCode: generateCode(),
     status: 'pending'
   });
 
