@@ -125,8 +125,17 @@ const payForProgram = async (req, res, next) => {
       throw err;
     }
 
-    user.rewardsProgram = { activeUntil: end };
-    await user.save();
+    // Atomic update instead of user.save(): the document above was loaded with
+    // only the rewardsProgram field, and save() would re-validate the whole user
+    // (and fail with "You must accept the waiver" because waiverAccepted wasn't
+    // loaded). If the update fails, release the payment reference so the member
+    // can retry with the same payment.
+    try {
+      await User.updateOne({ _id: req.user._id }, { $set: { 'rewardsProgram.activeUntil': end } });
+    } catch (updateError) {
+      await RewardsPayment.deleteOne({ paymentReference });
+      throw updateError;
+    }
 
     res.status(200).json({ active: true, activeUntil: end });
   } catch (error) {
