@@ -25,6 +25,9 @@ const getShops = async (req, res, next) => {
     if (category && category !== 'All') {
       query.category = category;
     }
+    if (req.query.rewardsOnly === 'true') {
+      query['rewardsProgram.activeUntil'] = { $gt: new Date() };
+    }
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);
     const limitNum = Math.min(Math.max(parseInt(limit, 10) || 20, 1), 50);
@@ -122,6 +125,10 @@ const getProviders = async (req, res, next) => {
     }
     if (category && category !== 'All') {
       query.category = category;
+    }
+    // "Spend my points": only providers with an active rewards membership.
+    if (req.query.rewardsOnly === 'true') {
+      query['rewardsProgram.activeUntil'] = { $gt: new Date() };
     }
 
     const pageNum = Math.max(parseInt(page, 10) || 1, 1);

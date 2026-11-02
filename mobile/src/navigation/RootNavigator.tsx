@@ -57,6 +57,7 @@ import RewardsScreen from '../screens/RewardsScreen';
 import RewardsProgramScreen from '../screens/RewardsProgramScreen';
 import EarningsScreen from '../screens/EarningsScreen';
 import EditBusinessProfileScreen from '../screens/EditBusinessProfileScreen';
+import { linking } from './linking';
 import BusinessAddressScreen from '../screens/BusinessAddressScreen';
 
 // promotions
@@ -98,7 +99,7 @@ const RootNavigator: React.FC = () => {
   const initialRouteName = getInitialRouteForRole(user?.role);
 
   return (
-    <NavigationContainer ref={navigationRef}>
+    <NavigationContainer ref={navigationRef} linking={linking}>
       <Stack.Navigator id={undefined} initialRouteName={initialRouteName} screenOptions={{ headerShown: false }}>
         {/* Auth */}
         <Stack.Screen name="Welcome" component={WelcomeScreen} />

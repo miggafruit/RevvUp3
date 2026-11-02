@@ -10,6 +10,7 @@ const {
   updateOrderStatus,
   completeServiceOrder,
   confirmServiceOrder,
+  cancelOrderByClient,
   payOrder
 } = require('../controllers/orderController');
 
@@ -21,6 +22,7 @@ router.get('/:id', protect, getOrderById);
 router.put('/:id/status', protect, authorize('shop', 'service_provider'), updateOrderStatus);
 router.patch('/:id/complete', protect, authorize('shop', 'service_provider'), completeServiceOrder);
 router.post('/:id/confirm', protect, authorize('client'), confirmServiceOrder);
+router.post('/:id/cancel', protect, authorize('client'), cancelOrderByClient);
 router.post('/:id/pay', protect, authorize('client'), payOrder);
 
 module.exports = router;

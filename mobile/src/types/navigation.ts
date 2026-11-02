@@ -12,9 +12,9 @@ export type RootStackParamList = {
   KycStatus: undefined;
   ShopDashboard: undefined;
 
-  ShopsList: undefined;
+  ShopsList: { rewardsOnly?: boolean } | undefined;
   ShopDetail: { shopId: string; shopName: string };
-  ProvidersList: undefined;
+  ProvidersList: { rewardsOnly?: boolean } | undefined;
   ProviderDetail: { providerId: string; providerName: string };
   ProductsBrowse: { shopId?: string; shopName?: string } | undefined;
   ServicesBrowse: { providerId?: string; providerName?: string } | undefined;

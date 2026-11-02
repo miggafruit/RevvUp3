@@ -49,3 +49,13 @@ Set `ALLOW_TEST_PAYMENTS=true` and `TEST_PAYMENT_EMAILS` on the backend first.
 3. **Redeem points:** Checkout on a service from a rewards provider → "Use my points". Points-only orders confirm without any card charge. Declined orders refund the points.
 4. **Cash job:** Choose Cash at checkout (services only). Provider taps Mark Service Complete → "Yes, received" (cash). Client taps "Confirm done & cash paid". Then the provider's Earnings tab shows the 8% as owed to RevvUp (negative balance deducted from the next payout).
 5. **Earnings tab:** Provider/shop Dashboard → Earnings. It updates live when both sides have confirmed, and for product orders when the driver completes delivery.
+
+## Spending reward points (redemption)
+
+1. Give a client points: complete a card booking with a provider that has an active ⭐ Rewards membership (both sides confirm).
+2. As that client: Rewards screen → "Find participating providers" (only providers that accept points are shown), pick a service, add to cart.
+3. Checkout → "Use my points". Points leave the balance immediately. If points cover the whole price, the order needs no card payment: after the provider accepts, tap Confirm order.
+4. Mixed payments work: points + card, or points + cash (cash booking only needs the remaining amount in cash).
+5. Cancel: on the order screen, "Cancel order" (before paying / before the provider finishes) returns the points. A provider declining also returns them.
+6. Shops join the same way (Shop Dashboard → RevvUp Rewards). Clients can spend points on a participating shop's products too: points cover the items only, never the delivery fee. Rewards screen → "Shop with points" lists only participating shops.
+7. Points can't be spent at sellers without an active membership.

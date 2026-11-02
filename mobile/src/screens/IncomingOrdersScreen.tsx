@@ -218,7 +218,7 @@ const IncomingOrdersScreen: React.FC<Props> = ({ navigation }) => {
         )}
 
         {!!item.pointsValue && item.pointsValue > 0 && (
-          <Text style={styles.waitingPaymentText}>⭐ Client redeemed R{item.pointsValue.toFixed(2)} in points (RevvUp covers this).</Text>
+          <Text style={styles.waitingPaymentText}>🎁 Client redeemed R{item.pointsValue.toFixed(2)} in points (RevvUp covers this).</Text>
         )}
         {isCashOrder && (
           <Text style={styles.waitingPaymentText}>💵 Cash booking — client pays you R{(item.amountDue ?? item.totalAmount ?? 0).toFixed(2)} directly.</Text>

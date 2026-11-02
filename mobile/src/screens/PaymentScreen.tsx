@@ -108,7 +108,7 @@ export default function PaymentScreen({ navigation, route }: Props) {
   if (amountDue <= 0) {
     return (
       <SafeAreaView style={styles.center}>
-        <Text style={{ color: "white", fontSize: 18, fontWeight: '700', marginBottom: 8 }}>Paid with points ⭐</Text>
+        <Text style={{ color: "white", fontSize: 18, fontWeight: '700', marginBottom: 8 }}>Paid with points 🎁</Text>
         <Text style={{ color: "white", textAlign: 'center', paddingHorizontal: 24, marginBottom: 20 }}>
           Your reward points cover this whole order. Nothing is charged to your card.
         </Text>

@@ -52,6 +52,17 @@ const getCart = async (req, res, next) => {
     // For service carts the checkout screen needs the provider's workshop
     // address (for the "I'll bring my vehicle to you" option).
     let seller = null;
+    const firstProduct = cart.items.find((i) => i.itemType === 'product' && i.product);
+    if (firstProduct) {
+      const shopDoc = await User.findById(firstProduct.product.shop).select('businessName businessAddress rewardsProgram');
+      if (shopDoc) {
+        seller = {
+          businessName: shopDoc.businessName,
+          businessAddress: shopDoc.businessAddress,
+          rewardsActive: !!(shopDoc.rewardsProgram?.activeUntil && shopDoc.rewardsProgram.activeUntil > new Date())
+        };
+      }
+    }
     const firstService = cart.items.find((i) => i.itemType === 'service' && i.service);
     if (firstService) {
       const sellerDoc = await User.findById(firstService.service.provider).select('businessName businessAddress rewardsProgram');

@@ -5,13 +5,13 @@
 //    (a shop or provider that has an active R150/month membership).
 //  - The reward is funded by RevvUp out of its 8% commission.
 //  - Points are stored as whole points; 1 point is worth POINT_VALUE_RAND.
-//  - Points can only be redeemed on SERVICES from participating service
-//    providers.
+//  - Points can be redeemed at any PARTICIPATING seller: services from
+//    providers, and products from shops (items only, never the delivery fee).
 const REWARD_RATE = 0.02;
 const POINT_VALUE_RAND = 0.1; // 10 points = R1
 const PROGRAMME_FEE_RAND = 150;
 const PROGRAMME_PERIOD_DAYS = 30;
-const REDEEMABLE_SELLER_ROLES = ['service_provider'];
+const REDEEMABLE_SELLER_ROLES = ['service_provider', 'shop'];
 
 const round2 = (n) => Math.round(n * 100) / 100;
 

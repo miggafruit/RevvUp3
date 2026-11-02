@@ -47,7 +47,7 @@ const RewardsProgramScreen: React.FC<Props> = ({ navigation }) => {
       const res = await payForRewardsProgram(reference);
       if (user) setUser({ ...user, rewardsActive: true, rewardsActiveUntil: res.activeUntil });
       await load();
-      showAlert('You are in! ⭐', 'Your REWARDS badge is live and you now appear first in searches.');
+      showAlert('You are in! 🎁', 'Your REWARDS badge is live and you now appear first in searches.');
     } catch (error: any) {
       showAlert(
         'Payment Error',
@@ -126,12 +126,14 @@ const RewardsProgramScreen: React.FC<Props> = ({ navigation }) => {
 
           <Text style={styles.sectionTitle}>What you get</Text>
           <View style={styles.card}>
-            <Text style={styles.line}>⭐ A prominent REWARDS badge on your profile and listings</Text>
+            <Text style={styles.line}>🎁 A prominent REWARDS badge on your profile and listings</Text>
             <Text style={styles.line}>⬆️ You are listed above non-participating businesses in searches</Text>
             <Text style={styles.line}>🎁 Your clients earn 2% back in points on every purchase with you</Text>
-            {user?.role === 'service_provider' && (
-              <Text style={styles.line}>💳 Clients can pay for your services with their points</Text>
-            )}
+            <Text style={styles.line}>
+              {user?.role === 'shop'
+                ? '💳 Clients can pay for your products with their points (items only, not delivery)'
+                : '💳 Clients can pay for your services with their points'}
+            </Text>
             <Text style={styles.line}>🔁 RevvUp funds the rewards from its commission — you pay only the membership</Text>
           </View>
 
@@ -176,7 +178,7 @@ const styles = StyleSheet.create({
   back: { color: colors.textPrimary, fontSize: 22 },
   headerTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
   status: { borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center', gap: 8 },
-  statusOn: { backgroundColor: colors.surface, borderWidth: 2, borderColor: '#FACC15' },
+  statusOn: { backgroundColor: colors.surface, borderWidth: 2, borderColor: '#7C3AED' },
   statusOff: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
   statusOffText: { color: colors.textSecondary, fontWeight: '700' },
   until: { color: colors.textSecondary, fontSize: 13 },

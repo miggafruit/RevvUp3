@@ -11,9 +11,9 @@ export default function PointsCard({ onPress }: { onPress: () => void }) {
   return (
     <TouchableOpacity activeOpacity={0.9} style={styles.card} onPress={onPress}>
       <View style={{ flex: 1 }}>
-        <Text style={styles.label}>⭐ YOUR REWARD POINTS</Text>
+        <Text style={styles.label}>🎁 YOUR REWARD POINTS</Text>
         <Text style={styles.points}>{points.toLocaleString()}</Text>
-        <Text style={styles.value}>worth R{value.toFixed(2)} at participating providers</Text>
+        <Text style={styles.value}>worth R{value.toFixed(2)} at participating shops & providers</Text>
       </View>
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
@@ -26,7 +26,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 18,
     borderRadius: 20,
-    backgroundColor: '#FACC15',
+    backgroundColor: '#7C3AED',
     flexDirection: 'row',
     alignItems: 'center',
     shadowColor: '#000',
@@ -35,8 +35,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 6
   },
-  label: { color: '#92400E', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
-  points: { color: '#111827', fontSize: 48, fontWeight: '900', lineHeight: 54 },
-  value: { color: '#374151', fontWeight: '600', fontSize: 13 },
-  chevron: { color: '#111827', fontSize: 36, fontWeight: '300' }
+  label: { color: '#DDD6FE', fontWeight: '800', fontSize: 12, letterSpacing: 1 },
+  points: { color: '#FFFFFF', fontSize: 48, fontWeight: '900', lineHeight: 54 },
+  value: { color: '#EDE9FE', fontWeight: '600', fontSize: 13 },
+  chevron: { color: '#FFFFFF', fontSize: 36, fontWeight: '300' }
 });

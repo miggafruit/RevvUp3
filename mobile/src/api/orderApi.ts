@@ -44,6 +44,12 @@ export const completeServiceOrder = async (orderId: string, cashReceived?: boole
   return data.order;
 };
 
+// Client withdraws an unpaid booking; stock and any points spent come back.
+export const cancelOrder = async (orderId: string): Promise<Order> => {
+  const { data } = await apiClient.post(`/orders/${orderId}/cancel`);
+  return data.order;
+};
+
 // Client side (step 2 of 2). For cash bookings pass cashPaid: true.
 export const confirmServiceOrder = async (orderId: string, cashPaid?: boolean): Promise<Order> => {
   const { data } = await apiClient.post(`/orders/${orderId}/confirm`, cashPaid ? { cashPaid: true } : {});

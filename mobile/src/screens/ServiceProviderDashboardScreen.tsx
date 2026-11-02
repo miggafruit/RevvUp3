@@ -95,8 +95,8 @@ const ServiceProviderDashboardScreen: React.FC<Props> = ({ navigation }) => {
           <Text style={styles.bigCardSubtitle}>Your sales, what you're owed, and your next payout — live</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.bigCard, user?.rewardsActive && { borderColor: '#FACC15', borderWidth: 2 }]} onPress={() => navigation.navigate('RewardsProgram')}>
-          <Text style={styles.bigCardEmoji}>⭐</Text>
+        <TouchableOpacity style={[styles.bigCard, user?.rewardsActive && { borderColor: '#7C3AED', borderWidth: 2 }]} onPress={() => navigation.navigate('RewardsProgram')}>
+          <Text style={styles.bigCardEmoji}>🎁</Text>
           <Text style={styles.bigCardTitle}>RevvUp Rewards {user?.rewardsActive ? '· ACTIVE' : ''}</Text>
           <Text style={styles.bigCardSubtitle}>
             {user?.rewardsActive

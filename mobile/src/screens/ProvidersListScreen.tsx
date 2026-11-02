@@ -20,6 +20,7 @@ import { ProviderListing } from '../types/marketplace';
 import StarRating from '../components/StarRating';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import RewardsBadge from '../components/RewardsBadge';
+import PromoBadge from '../components/PromoBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ProvidersList'>;
 
@@ -31,7 +32,8 @@ const CATEGORIES: { label: string; icon: keyof typeof MaterialCommunityIcons.gly
   { label: 'Electrical', icon: 'flash' }
 ];
 
-const ProvidersListScreen: React.FC<Props> = ({ navigation }) => {
+const ProvidersListScreen: React.FC<Props> = ({ navigation, route }) => {
+  const rewardsOnly = !!route.params?.rewardsOnly;
   const [providers, setProviders] = useState<ProviderListing[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -43,13 +45,14 @@ const ProvidersListScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const { providers: results } = await getProviders({
         search: searchTerm || undefined,
-        category: category || undefined
+        category: category || undefined,
+        rewardsOnly: rewardsOnly || undefined
       });
       setProviders(results);
     } catch (error) {
       console.warn('Failed to load providers', error);
     }
-  }, []);
+  }, [rewardsOnly]);
 
   useEffect(() => {
     promotionApi
@@ -90,7 +93,7 @@ const ProvidersListScreen: React.FC<Props> = ({ navigation }) => {
             <MaterialCommunityIcons name="account-hard-hat-outline" size={30} color={colors.textMuted} />
           </View>
         )}
-        {promoSellerIds.has(item._id) && <View style={styles.promoDot} />}
+        {promoSellerIds.has(item._id) && <PromoBadge floating />}
         <View style={styles.heartIcon}>
           <MaterialCommunityIcons name="heart-outline" size={15} color={colors.white} />
         </View>

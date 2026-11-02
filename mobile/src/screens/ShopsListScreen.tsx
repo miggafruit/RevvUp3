@@ -20,6 +20,7 @@ import { ShopListing } from '../types/marketplace';
 import StarRating from '../components/StarRating';
 import { colors, spacing, radius, typography } from '../theme/colors';
 import RewardsBadge from '../components/RewardsBadge';
+import PromoBadge from '../components/PromoBadge';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'ShopsList'>;
 
@@ -31,7 +32,8 @@ const CATEGORIES: { label: string; icon: keyof typeof MaterialCommunityIcons.gly
   { label: 'Battery', icon: 'car-battery' }
 ];
 
-const ShopsListScreen: React.FC<Props> = ({ navigation }) => {
+const ShopsListScreen: React.FC<Props> = ({ navigation, route }) => {
+  const rewardsOnly = !!route.params?.rewardsOnly;
   const [shops, setShops] = useState<ShopListing[]>([]);
   const [search, setSearch] = useState('');
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
@@ -43,7 +45,8 @@ const ShopsListScreen: React.FC<Props> = ({ navigation }) => {
     try {
       const { shops: results } = await getShops({
         search: searchTerm || undefined,
-        category: category || undefined
+        category: category || undefined,
+        rewardsOnly: rewardsOnly || undefined
       });
       setShops(results);
     } catch (error) {
@@ -90,7 +93,7 @@ const ShopsListScreen: React.FC<Props> = ({ navigation }) => {
             <MaterialCommunityIcons name="store-outline" size={30} color={colors.textMuted} />
           </View>
         )}
-        {promoSellerIds.has(item._id) && <View style={styles.promoDot} />}
+        {promoSellerIds.has(item._id) && <PromoBadge floating />}
         <View style={styles.heartIcon}>
           <MaterialCommunityIcons name="heart-outline" size={15} color={colors.white} />
         </View>

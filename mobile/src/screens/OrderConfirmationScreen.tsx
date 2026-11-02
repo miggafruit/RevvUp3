@@ -6,6 +6,7 @@ import type { RootStackParamList } from '../types/navigation';
 import * as orderApi from '../api/orderApi';
 import { getOrderById } from '../api/orderApi';
 import { showAlert } from '../utils/crossPlatformAlert';
+import { useRewards } from '../context/RewardsContext';
 import { Order } from '../types/marketplace';
 import { colors, spacing, radius, typography } from '../theme/colors';
 
@@ -18,6 +19,7 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [confirming, setConfirming] = useState(false);
+  const { refresh: refreshRewards } = useRewards();
 
   const pulse = useRef(new Animated.Value(1)).current;
 
@@ -94,6 +96,32 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
   const isCashBooked = order.status === 'confirmed' && isCash;
   const needsClientConfirm =
     !!order.providerCompletedAt && !order.clientConfirmedAt && order.status !== 'cancelled' && !order.finalizedAt;
+  const canCancel =
+    (order.status === 'pending' || order.status === 'confirmed') &&
+    order.paymentStatus !== 'paid' &&
+    !order.providerCompletedAt;
+  const handleCancel = () => {
+    showAlert(
+      'Cancel this order?',
+      order.pointsRedeemed ? `Your ${order.pointsRedeemed} points will be given back.` : 'You have not been charged.',
+      [
+        { text: 'Keep order', style: 'cancel' },
+        {
+          text: 'Cancel order',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const updated = await orderApi.cancelOrder(order._id);
+              setOrder(updated);
+              refreshRewards();
+            } catch (e: any) {
+              showAlert('Could Not Cancel', e?.response?.data?.message || 'Please try again');
+            }
+          }
+        }
+      ]
+    );
+  };
   const handleClientConfirm = async () => {
     const send = async () => {
       setConfirming(true);
@@ -196,7 +224,7 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
           </View>
           {!!order.pointsValue && order.pointsValue > 0 && (
             <View style={styles.summaryRow}>
-              <Text style={styles.summaryLabel}>Paid with points ⭐</Text>
+              <Text style={styles.summaryLabel}>Paid with points 🎁</Text>
               <Text style={styles.summaryValue}>- R {order.pointsValue.toFixed(2)}</Text>
             </View>
           )}
@@ -259,6 +287,12 @@ const OrderConfirmationScreen: React.FC<Props> = ({ navigation, route }) => {
             onPress={() => navigation.navigate('DeliveryTracking', { orderId: order._id })}
           >
             <Text style={styles.doneButtonText}>Track Delivery</Text>
+          </TouchableOpacity>
+        )}
+
+        {canCancel && (
+          <TouchableOpacity style={[styles.secondaryButton, { marginTop: spacing.md }]} onPress={handleCancel}>
+            <Text style={[styles.secondaryButtonText, { color: colors.danger }]}>Cancel order</Text>
           </TouchableOpacity>
         )}
 

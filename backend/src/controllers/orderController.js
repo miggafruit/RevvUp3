@@ -165,15 +165,16 @@ const checkout = async (req, res, next) => {
     const pointsRequested = Math.max(0, Math.floor(Number(redeemPoints) || 0));
     let pointsValue = 0;
     if (pointsRequested > 0) {
-      if (!isServiceOrder || !REDEEMABLE_SELLER_ROLES.includes(seller.role)) {
-        return res.status(400).json({ message: 'Points can only be used on services from participating providers.' });
+      if (!REDEEMABLE_SELLER_ROLES.includes(seller.role)) {
+        return res.status(400).json({ message: 'Points cannot be used with this seller.' });
       }
       if (!isRewardsActive(seller)) {
-        return res.status(400).json({ message: 'This provider is not part of the rewards programme, so points cannot be used here.' });
+        return res.status(400).json({ message: 'This seller is not part of the rewards programme, so points cannot be used here.' });
       }
       pointsValue = pointsToRand(pointsRequested);
-      if (pointsValue > totalAmount) {
-        return res.status(400).json({ message: 'You are using more points than this booking costs.' });
+      // Delivery is paid to the driver in real money, so points only cover the items.
+      if (pointsValue > subtotal) {
+        return res.status(400).json({ message: 'You are using more points than the items in this order cost.' });
       }
       const reserved = await reservePoints(req.user._id, pointsRequested);
       if (!reserved) {
@@ -380,6 +381,63 @@ const updateOrderStatus = async (req, res, next) => {
   }
 };
 
+// @route   POST /api/orders/:id/cancel
+// @access  Private (the client who placed it)
+// A client may withdraw a booking until money or work is involved: while the
+// seller has not answered, or after acceptance but before they have paid (card)
+// / before the provider has started closing it (cash). Reserved stock and any
+// reward points spent on it go back. Paid orders are NOT cancellable here —
+// those need a refund, which is handled by support.
+const cancelOrderByClient = async (req, res, next) => {
+  try {
+    // Atomic claim so a double tap / race can never refund points twice.
+    const order = await Order.findOneAndUpdate(
+      {
+        _id: req.params.id,
+        client: req.user._id,
+        status: { $in: ['pending', 'confirmed'] },
+        paymentStatus: { $ne: 'paid' },
+        providerCompletedAt: { $exists: false },
+        finalizedAt: { $exists: false }
+      },
+      { $set: { status: 'cancelled' } },
+      { new: true }
+    );
+    if (!order) {
+      const existing = await Order.findById(req.params.id).select('client status paymentStatus');
+      if (!existing || existing.client.toString() !== req.user._id.toString()) {
+        return res.status(404).json({ message: 'Order not found' });
+      }
+      return res.status(400).json({
+        message:
+          existing.paymentStatus === 'paid'
+            ? 'This order is already paid, so it cannot be cancelled in the app. Please contact support.'
+            : `This order is already ${existing.status} and cannot be cancelled.`
+      });
+    }
+
+    const Product = require('../models/Product');
+    await Promise.all(
+      order.items
+        .filter((item) => item.itemType === 'product')
+        .map((item) => Product.findByIdAndUpdate(item.product, { $inc: { stock: item.quantity } }))
+    );
+    await refundRedemption(order);
+
+    const sellerIds = [...new Set(order.items.map((item) => item.sellerSnapshot.toString()))];
+    const sellers = await User.find({ _id: { $in: sellerIds } }).select('pushToken');
+    sendPushNotifications(sellers, {
+      title: 'Order cancelled by client',
+      body: 'The client cancelled this booking before it was paid.',
+      data: { type: 'order_status_changed', orderId: order._id.toString(), status: 'cancelled' }
+    });
+
+    res.status(200).json({ order });
+  } catch (error) {
+    next(error);
+  }
+};
+
 // @route   PATCH /api/orders/:id/complete
 // @access  Private (the provider on this order)
 // body: { cashReceived?: true }  — required for cash bookings
@@ -577,7 +635,7 @@ const payOrder = async (req, res, next) => {
     const sellers = await User.find({ _id: { $in: sellerIds } }).select('pushToken');
     sendPushNotifications(sellers, {
       title: 'Payment received',
-      body: `The client paid R${order.totalAmount} — you can start preparing this order.`,
+      body: `The client paid${expectedAmount > 0 ? ` R${expectedAmount}` : ' with reward points'} — you can start preparing this order.`,
       data: { type: 'order_paid', orderId: order._id.toString() }
     });
 
@@ -607,4 +665,4 @@ const payOrder = async (req, res, next) => {
   }
 };
 
-module.exports = { getCheckoutQuote, checkout, getMyOrders, getIncomingOrders, getOrderById, updateOrderStatus, completeServiceOrder, confirmServiceOrder, payOrder };
+module.exports = { getCheckoutQuote, checkout, getMyOrders, getIncomingOrders, getOrderById, updateOrderStatus, completeServiceOrder, confirmServiceOrder, cancelOrderByClient, payOrder };

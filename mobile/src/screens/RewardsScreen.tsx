@@ -48,27 +48,32 @@ const RewardsScreen: React.FC<Props> = ({ navigation }) => {
         }
       >
         <View style={styles.hero}>
-          <Text style={styles.heroLabel}>⭐ YOUR POINTS</Text>
+          <Text style={styles.heroLabel}>🎁 YOUR POINTS</Text>
           <Text style={styles.heroPoints}>{points.toLocaleString()}</Text>
           <Text style={styles.heroValue}>= R{(summary?.valueRand ?? 0).toFixed(2)} to spend</Text>
         </View>
 
-        <TouchableOpacity style={styles.cta} onPress={() => navigation.navigate('ProvidersList')}>
-          <Text style={styles.ctaText}>Find participating providers →</Text>
-          <Text style={styles.ctaSub}>Providers with the ⭐ REWARDS badge are listed first</Text>
+        <TouchableOpacity style={[styles.cta, { marginBottom: spacing.sm }]} onPress={() => navigation.navigate('ShopsList', { rewardsOnly: true })}>
+          <Text style={styles.ctaText}>Shop with points →</Text>
+          <Text style={styles.ctaSub}>Only shops that accept points are shown</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity style={styles.cta} onPress={() => navigation.navigate('ProvidersList', { rewardsOnly: true })}>
+          <Text style={styles.ctaText}>Book services with points →</Text>
+          <Text style={styles.ctaSub}>Only providers that accept points are shown</Text>
         </TouchableOpacity>
 
         <Text style={styles.sectionTitle}>How it works</Text>
         <View style={styles.card}>
-          <Text style={styles.how}>• Every purchase from a ⭐ REWARDS shop or provider earns you 2% back in points.</Text>
+          <Text style={styles.how}>• Every purchase from a 🎁 REWARDS shop or provider earns you 2% back in points.</Text>
           <Text style={styles.how}>• 10 points = R1.</Text>
-          <Text style={styles.how}>• Spend your points on any service from a ⭐ REWARDS provider — choose "Use points" at checkout.</Text>
+          <Text style={styles.how}>• Spend your points at any 🎁 REWARDS provider or shop — choose "Use my points" at checkout (products: items only, not delivery).</Text>
           <Text style={styles.how}>• Points are added once both you and the seller have confirmed the job is done.</Text>
         </View>
 
         <Text style={styles.sectionTitle}>Recent activity</Text>
         {(summary?.recent ?? []).length === 0 ? (
-          <Text style={styles.empty}>No activity yet — your first purchase at a ⭐ REWARDS seller will show up here.</Text>
+          <Text style={styles.empty}>No activity yet — your first purchase at a 🎁 REWARDS seller will show up here.</Text>
         ) : (
           summary!.recent.map((tx) => (
             <View key={tx._id} style={styles.row}>
@@ -96,10 +101,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg },
   back: { color: colors.textPrimary, fontSize: 22 },
   headerTitle: { color: colors.textPrimary, fontSize: 17, fontWeight: '700' },
-  hero: { backgroundColor: '#FACC15', borderRadius: 24, padding: 24, alignItems: 'center', marginBottom: spacing.lg },
-  heroLabel: { color: '#92400E', fontWeight: '800', letterSpacing: 1 },
-  heroPoints: { color: '#111827', fontSize: 64, fontWeight: '900' },
-  heroValue: { color: '#374151', fontWeight: '700' },
+  hero: { backgroundColor: '#7C3AED', borderRadius: 24, padding: 24, alignItems: 'center', marginBottom: spacing.lg },
+  heroLabel: { color: '#DDD6FE', fontWeight: '800', letterSpacing: 1 },
+  heroPoints: { color: '#FFFFFF', fontSize: 64, fontWeight: '900' },
+  heroValue: { color: '#EDE9FE', fontWeight: '700' },
   cta: { backgroundColor: colors.surface, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.accent },
   ctaText: { color: colors.accent, fontWeight: '800', fontSize: 16 },
   ctaSub: { color: colors.textSecondary, fontSize: 12, marginTop: 2 },

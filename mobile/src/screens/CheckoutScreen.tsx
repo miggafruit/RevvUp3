@@ -35,7 +35,7 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
   const [quote, setQuote] = useState<orderApi.DeliveryQuote | null>(null);
   const [quoteError, setQuoteError] = useState<string | null>(null);
   const [isQuoting, setIsQuoting] = useState(false);
-  const { summary: rewards } = useRewards();
+  const { summary: rewards, refresh: refreshRewards } = useRewards();
   const [paymentMethod, setPaymentMethod] = useState<'card' | 'cash'>('card');
   const [usePoints, setUsePoints] = useState(false);
   const hasProducts = cart.items.some((i) => i.itemType === 'product');
@@ -72,9 +72,9 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
   const shownTotal = subtotal + shownDeliveryFee;
   const sellerRewards = !!seller?.rewardsActive;
   const pointsBalance = rewards?.points ?? 0;
-  const canRedeem = isServiceOrder && sellerRewards && pointsBalance > 0;
-  // 10 points = R1, capped at the order total
-  const pointsToUse = usePoints && canRedeem ? Math.min(pointsBalance, Math.floor(shownTotal * 10)) : 0;
+  const canRedeem = sellerRewards && pointsBalance > 0;
+  // 10 points = R1, capped at the items (delivery is always paid in real money)
+  const pointsToUse = usePoints && canRedeem ? Math.min(pointsBalance, Math.floor(subtotal * 10)) : 0;
   const pointsValueRand = pointsToUse / 10;
   const amountToPay = Math.max(0, shownTotal - pointsValueRand);
   const earnPoints = sellerRewards ? Math.floor(((subtotal * 0.02) / 0.1)) : 0;
@@ -107,6 +107,7 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
         redeemPoints: pointsToUse > 0 ? pointsToUse : undefined
       });
       await clear();
+      if (pointsToUse > 0) refreshRewards();
       navigation.replace('OrderConfirmation', { orderId: order._id });
     } catch (error: any) {
       const message = error?.response?.data?.message || 'Something went wrong placing your order';
@@ -183,10 +184,10 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
             </View>
           )}
 
-          {isServiceOrder && (
+          {(isServiceOrder || pointsBalance > 0) && (
             <View style={{ marginBottom: spacing.md }}>
               <Text style={styles.sectionTitle}>Payment</Text>
-              <View style={{ flexDirection: 'row', gap: 8 }}>
+              {isServiceOrder && (<View style={{ flexDirection: 'row', gap: 8 }}>
                 {(['card', 'cash'] as const).map((m) => (
                   <TouchableOpacity
                     key={m}
@@ -199,8 +200,8 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
                     <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>{m === 'card' ? '💳 Pay online' : '💵 Cash'}</Text>
                   </TouchableOpacity>
                 ))}
-              </View>
-              {paymentMethod === 'cash' && (
+              </View>)}
+              {isServiceOrder && paymentMethod === 'cash' && (
                 <Text style={{ color: colors.textSecondary, marginTop: 6, fontSize: 12 }}>
                   Pay the provider in cash after the work is done, then confirm in the app. Both sides must confirm.
                 </Text>
@@ -208,21 +209,22 @@ const CheckoutScreen: React.FC<Props> = ({ navigation }) => {
               {canRedeem && (
                 <TouchableOpacity
                   onPress={() => setUsePoints((v) => !v)}
-                  style={{ marginTop: 10, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: usePoints ? '#FACC15' : colors.border ?? '#444' }}
+                  style={{ marginTop: 10, padding: 12, borderRadius: 10, borderWidth: 2, borderColor: usePoints ? '#7C3AED' : colors.border ?? '#444' }}
                 >
                   <Text style={{ color: colors.textPrimary, fontWeight: '700' }}>
-                    {usePoints ? '✅' : '⭐'} Use my points ({pointsBalance} pts = R{(pointsBalance / 10).toFixed(2)})
+                    {usePoints ? '✅' : '🎁'} Use my points ({pointsBalance} pts = R{(pointsBalance / 10).toFixed(2)})
                   </Text>
                   {usePoints && (
                     <Text style={{ color: colors.textSecondary, fontSize: 12, marginTop: 2 }}>
                       Using {pointsToUse} pts · saves R{pointsValueRand.toFixed(2)}
+                      {!isServiceOrder ? ' (items only — delivery is paid normally)' : ''}
                     </Text>
                   )}
                 </TouchableOpacity>
               )}
-              {isServiceOrder && !sellerRewards && pointsBalance > 0 && (
+              {!sellerRewards && pointsBalance > 0 && (
                 <Text style={{ color: colors.textSecondary, marginTop: 8, fontSize: 12 }}>
-                  Points can only be used with providers showing the ⭐ REWARDS badge.
+                  Points can only be used with shops and providers showing the 🎁 REWARDS badge.
                 </Text>
               )}
             </View>

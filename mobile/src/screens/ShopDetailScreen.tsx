@@ -64,8 +64,8 @@ const ShopDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {(shop as any)?.rewardsActive && <RewardsBadge size="large" />}
         {hasPromotion && (
           <View style={styles.promoBadge}>
-            <View style={styles.promoBadgeDot} />
-            <Text style={styles.promoBadgeText}>Running a special right now</Text>
+            
+            <Text style={styles.promoBadgeText}>🏷️ Running a special right now</Text>
           </View>
         )}
         <Text style={styles.shopSubtitle}>Browse all products from this shop</Text>

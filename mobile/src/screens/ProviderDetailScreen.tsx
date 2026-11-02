@@ -67,8 +67,8 @@ const ProviderDetailScreen: React.FC<Props> = ({ navigation, route }) => {
         {(provider as any)?.rewardsActive && <RewardsBadge size="large" />}
         {hasPromotion && (
           <View style={styles.promoBadge}>
-            <View style={styles.promoBadgeDot} />
-            <Text style={styles.promoBadgeText}>Running a special right now</Text>
+            
+            <Text style={styles.promoBadgeText}>🏷️ Running a special right now</Text>
           </View>
         )}
         <Text style={styles.providerSubtitle}>Browse all services from this provider</Text>
